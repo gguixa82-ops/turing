@@ -133,20 +133,24 @@ async function refreshBadge() {
 }
 
 /* ---------- support ---------- */
+const TOPIC_CLASS = { 'General': 't-gen', 'Bug report': 't-bug', 'Feature request': 't-feat', 'API access': 't-api', 'Billing': 't-bill', 'Other': 't-gen' };
 async function renderSupport() {
   const main = $('#aMain');
   main.innerHTML = `<div class="sec" style="opacity:0"><div class="a-head"><h1>Loading…</h1></div></div>`;
   try { state.support = (await api('/api/admin/support')).messages; } catch { return; }
   if (!state.selected || !state.support.find(m => m.id === state.selected)) state.selected = state.support[0]?.id || null;
   const list = state.support.map(m => {
-    const hasActivity = (m.replies?.length || 0) > 0;
+    const nReplies = (m.replies?.length || 0);
     return `
     <button class="sup-item ${m.id === state.selected ? 'sel' : ''} ${m.read ? '' : 'unread'}" data-id="${m.id}">
-      ${m.resolved ? '<span class="si-res">RESOLVED</span>' : ''}
-      ${!m.read && hasActivity ? '<span class="si-new">NEW</span>' : ''}
-      <div class="si-top"><span class="si-name">${esc(m.name)}</span><span class="si-topic">${esc(m.topic)}</span></div>
+      <div class="si-top">
+        ${!m.read ? '<span class="si-dot" title="Unread"></span>' : ''}
+        <span class="si-name">${esc(m.name)}</span>
+        <span class="si-topic ${TOPIC_CLASS[m.topic] || 't-gen'}">${esc(m.topic)}</span>
+        ${m.resolved ? '<span class="si-res">RESOLVED</span>' : ''}
+      </div>
       <div class="si-msg">${esc(m.message)}</div>
-      <div class="si-date">${fullDate(m.created)}</div>
+      <div class="si-date">${fullDate(m.created)}${nReplies ? ` · ${nReplies} repl${nReplies === 1 ? 'y' : 'ies'}` : ''}</div>
     </button>`;
   }).join('');
   const m = state.support.find(x => x.id === state.selected);
@@ -156,7 +160,13 @@ async function renderSupport() {
   ].sort((a, b) => new Date(a.at) - new Date(b.at)) : [];
   const detail = m ? `
     <div class="sd-head">
-      <div><div class="sd-name">${esc(m.name)}</div><div class="sd-mail">${esc(m.email)} · ${esc(m.topic)} · ${fullDate(m.created)}</div></div>
+      <span class="sd-avatar">${esc(m.name.trim().charAt(0).toUpperCase() || '?')}</span>
+      <div class="sd-id">
+        <div class="sd-name">${esc(m.name)}</div>
+        <div class="sd-mail"><a href="mailto:${esc(m.email)}">${esc(m.email)}</a></div>
+      </div>
+      <span class="si-topic ${TOPIC_CLASS[m.topic] || 't-gen'}">${esc(m.topic)}</span>
+      <span class="sd-date">${fullDate(m.created)}</span>
       <div class="sd-actions">
         <button class="btn btn-ghost btn-sm" data-act="${m.read ? 'unread' : 'read'}">${m.read ? 'Mark unread' : 'Mark read'}</button>
         <button class="btn ${m.resolved ? 'btn-ghost' : 'btn-primary'} btn-sm" data-act="${m.resolved ? 'reopen' : 'resolve'}">${m.resolved ? 'Reopen' : 'Resolve'}</button>
@@ -212,14 +222,52 @@ async function renderSupport() {
 /* ---------- status ---------- */
 const STATUSES = ['ok', 'degraded', 'outage'];
 const STAT_LABEL = { ok: 'Operational', degraded: 'Degraded', outage: 'Outage' };
+const SEV_LABEL = { degraded: 'Degraded performance', outage: 'Outage', maintenance: 'Maintenance' };
+const SEV_CLASS = { degraded: 'deg', outage: 'out', maintenance: 'mnt' };
+
 async function renderStatus() {
   const main = $('#aMain');
   main.innerHTML = `<div class="sec" style="opacity:0"><div class="a-head"><h1>Loading…</h1></div></div>`;
   try { state.status = (await api('/api/admin/status')).status; } catch { return; }
   const svc = state.status.services;
+  const incidents = state.status.incidents || [];
+  const active = incidents.filter(i => !i.resolved);
+  const resolved = incidents.filter(i => i.resolved).slice(0, 12);
   main.innerHTML = `
   <div class="sec">
-    <div class="a-head"><div><h1>Status</h1><div class="a-sub">90-day history, fully editable. Changes are live on the public status page instantly.</div></div></div>
+    <div class="a-head"><div><h1>Status</h1><div class="a-sub">Incidents, services and 90-day history — everything goes live on the public status page instantly.</div></div></div>
+
+    <div class="card inc-composer">
+      <h3>Write an incident</h3>
+      <div class="inc-form">
+        <div class="inc-row">
+          <select id="incSev">
+            <option value="degraded">Degraded performance</option>
+            <option value="outage">Outage</option>
+            <option value="maintenance">Maintenance</option>
+          </select>
+          <select id="incSvc">
+            <option value="">All services</option>
+            ${svc.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}
+          </select>
+          <input id="incTitle" placeholder="Short title — e.g. Elevated error rates" maxlength="120">
+        </div>
+        <div class="field" style="margin:0"><textarea id="incMsg" style="min-height:84px" placeholder="What is happening? This text is published on the public status page…" maxlength="1200"></textarea></div>
+        <div class="inc-row inc-foot">
+          <span class="inc-hint">If a service is selected, today is marked accordingly in its history.</span>
+          <button class="btn btn-primary btn-sm" id="incCreate">Publish incident <span style="opacity:.6">→</span></button>
+        </div>
+      </div>
+    </div>
+
+    ${active.length ? `<div class="inc-active">${active.map(incCard).join('')}</div>` : ''}
+
+    ${resolved.length ? `
+    <div class="card inc-resolved-card">
+      <h3>Resolved incidents</h3>
+      ${resolved.map(incRowResolved).join('')}
+    </div>` : ''}
+
     <div class="bulk-bar">
       <span class="b-label">Bulk history</span>
       <select id="bulkStatus">${STATUSES.map(s => `<option value="${s}">${STAT_LABEL[s]}</option>`).join('')}</select>
@@ -235,6 +283,48 @@ async function renderStatus() {
       <button class="btn btn-ghost btn-sm" id="addSvcBtn">Add service</button>
     </div>
   </div>`;
+
+  // create incident
+  $('#incCreate').addEventListener('click', async () => {
+    const title = $('#incTitle').value.trim();
+    const message = $('#incMsg').value.trim();
+    if (!title || !message) { toast('Title and message are required', true); return; }
+    try {
+      await post('/api/admin/status', { op: 'addIncident', title, message, severity: $('#incSev').value, serviceId: $('#incSvc').value || null });
+      toast('Incident published');
+    } catch { toast('Failed', true); }
+    renderStatus();
+  });
+
+  // incident actions (updates / resolve / reopen / delete)
+  main.querySelectorAll('[data-inc]').forEach(card => {
+    card.addEventListener('click', async e => {
+      const b = e.target.closest('button[data-incact]');
+      if (!b) return;
+      const id = card.dataset.inc;
+      const act = b.dataset.incact;
+      try {
+        if (act === 'update') {
+          const input = card.querySelector('.iu-input');
+          const text = input ? input.value.trim() : '';
+          if (!text) { toast('Write the update first', true); return; }
+          await post('/api/admin/status', { op: 'incidentUpdate', id, text });
+          toast('Update posted');
+        } else if (act === 'resolve') {
+          await post('/api/admin/status', { op: 'resolveIncident', id });
+          toast('Incident resolved');
+        } else if (act === 'reopen') {
+          await post('/api/admin/status', { op: 'reopenIncident', id });
+          toast('Incident reopened');
+        } else if (act === 'delete') {
+          if (!confirm('Delete this incident?')) return;
+          await post('/api/admin/status', { op: 'deleteIncident', id });
+          toast('Incident deleted');
+        }
+      } catch { toast('Failed', true); }
+      renderStatus();
+    });
+  });
 
   // bulk
   $('#bulkApply').addEventListener('click', async e => {
@@ -295,24 +385,43 @@ async function renderStatus() {
     });
   });
 }
-function svcRow(s, i) {
-  const today = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
-  const ninetyAgo = new Date(Date.now() - 89 * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+function incSvcName(inc) {
+  if (!inc.serviceId) return 'All services';
+  const s = state.status.services.find(x => x.id === inc.serviceId);
+  return s ? s.name : 'All services';
+}
+function incCard(inc) {
   return `
-  <div class="svc-row" style="--i:${i}" data-id="${s.id}">
-    <div class="svr-top">
-      <input name="name" value="${esc(s.name)}" maxlength="60">
-      <div class="seg">
-        ${STATUSES.map(st => `<button data-st="${st}" class="${s.status === st ? (st === 'ok' ? 'on-ok' : st === 'degraded' ? 'on-deg' : 'on-out') : ''}">${STAT_LABEL[st]}</button>`).join('')}
-      </div>
-      <button class="btn btn-ghost btn-sm svr-del" data-reset>90 days → clean</button>
-      <button class="btn btn-danger btn-sm" data-del>Remove</button>
+  <div class="inc-card ${SEV_CLASS[inc.severity] || 'deg'}" data-inc="${inc.id}">
+    <div class="inc-top">
+      <span class="inc-sev">${SEV_LABEL[inc.severity] || 'Degraded performance'}</span>
+      <span class="inc-meta">${esc(incSvcName(inc))} · opened ${fullDate(inc.created)}</span>
+      <span class="inc-actions">
+        <button class="btn btn-ghost btn-sm" data-incact="resolve">Resolve</button>
+        <button class="btn btn-danger btn-sm" data-incact="delete">Delete</button>
+      </span>
     </div>
-    <input class="svr-desc" value="${esc(s.description)}" maxlength="120" placeholder="Description">
-    <div class="day-grid">
-      ${s.history.map((v, di) => `<button class="day ${v === 'degraded' ? 'd' : v === 'outage' ? 'o' : ''} ${di === 89 ? 'today' : ''}" data-i="${di}" data-v="${v}" title="${today && di === 89 ? 'Today' : new Date(Date.now() - (89 - di) * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · ${STAT_LABEL[v]} — click to change"></button>`).join('')}
+    <div class="inc-title">${esc(inc.title)}</div>
+    <div class="inc-msg">${esc(inc.message)}</div>
+    ${(inc.updates && inc.updates.length) ? `<ul class="inc-updates">${inc.updates.map(u => `<li><span class="iu-at">${fullDate(u.at)}</span><span>${esc(u.text)}</span></li>`).join('')}</ul>` : ''}
+    <div class="inc-addupdate">
+      <input class="iu-input" placeholder="Add a public update to this incident…" maxlength="1200">
+      <button class="btn btn-ghost btn-sm" data-incact="update">Post update</button>
     </div>
-    <div class="day-scale"><span>${ninetyAgo}</span><span>Today</span></div>
+  </div>`;
+}
+function incRowResolved(inc) {
+  return `
+  <div class="inc-res" data-inc="${inc.id}">
+    <span class="inc-sev sm ${SEV_CLASS[inc.severity] || 'deg'}">${SEV_LABEL[inc.severity] || 'Degraded performance'}</span>
+    <div class="inc-res-mid">
+      <div class="inc-title">${esc(inc.title)}</div>
+      <div class="inc-meta">Resolved ${fullDate(inc.resolvedAt || inc.created)} · ${esc(incSvcName(inc))}${(inc.updates && inc.updates.length) ? ` · ${inc.updates.length} update${inc.updates.length === 1 ? '' : 's'}` : ''}</div>
+    </div>
+    <span class="inc-actions">
+      <button class="btn btn-ghost btn-sm" data-incact="reopen">Reopen</button>
+      <button class="btn btn-danger btn-sm" data-incact="delete">Delete</button>
+    </span>
   </div>`;
 }
 

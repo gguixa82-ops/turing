@@ -25,6 +25,10 @@ let db = loadDB();
 function save() {
   fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
 }
+function migrate() {
+  // shape upgrades for older databases
+  if (db && db.status && !Array.isArray(db.status.incidents)) db.status.incidents = [];
+}
 
 function hashPw(pw, salt) {
   return crypto.scryptSync(String(pw), salt, 64).toString('hex');
@@ -54,7 +58,7 @@ function seed() {
     admin: { username: 'genisguixa', salt, passHash: hashPw('2011824', salt) },
     resets: {},
     support: [],
-    status: { services: seedStatus(), updated: new Date().toISOString() },
+    status: { services: seedStatus(), incidents: [], updated: new Date().toISOString() },
     site: {
       maintenance: false,
       blockLogins: false,
@@ -66,7 +70,7 @@ function seed() {
   };
   save();
 }
-if (!db) seed(); else save(); // ensure shape persists
+if (!db) seed(); else { migrate(); save(); } // ensure shape persists
 
 function logActivity(text) {
   db.activity.unshift({ at: new Date().toISOString(), text });
@@ -239,7 +243,8 @@ async function handleApi(req, res, url) {
   // ---- status (public) ----
   if (m === 'GET' && p === '/api/status') {
     const services = db.status.services.map(s => ({ id: s.id, name: s.name, description: s.description, status: s.status, history: s.history }));
-    return json(res, 200, { services, updated: db.status.updated });
+    const incidents = (db.status.incidents || []).map(i => ({ ...i, updates: i.updates || [] }));
+    return json(res, 200, { services, incidents, updated: db.status.updated });
   }
 
   // ---- support (public submit) ----
@@ -460,6 +465,46 @@ async function handleApi(req, res, url) {
       if (!['ok', 'degraded', 'outage'].includes(b.status)) return json(res, 400, { error: 'invalid' });
       st.services.forEach(s => { for (let i = 90 - n; i < 90; i++) s.history[i] = b.status; s.status = s.history[89]; });
       logActivity(`Status bulk update: last ${n} day(s) → ${b.status}`);
+    } else if (b.op === 'addIncident') {
+      const title = String(b.title || '').trim().slice(0, 120);
+      const message = String(b.message || '').trim().slice(0, 1200);
+      if (!title || !message) return json(res, 400, { error: 'invalid', message: 'Title and message are required.' });
+      const severity = ['degraded', 'outage', 'maintenance'].includes(b.severity) ? b.severity : 'degraded';
+      const serviceId = typeof b.serviceId === 'string' && st.services.some(s => s.id === b.serviceId) ? b.serviceId : null;
+      if (!Array.isArray(st.incidents)) st.incidents = [];
+      const inc = { id: crypto.randomBytes(6).toString('hex'), title, message, severity, serviceId, created: new Date().toISOString(), resolved: false, resolvedAt: null, updates: [] };
+      st.incidents.unshift(inc);
+      if (serviceId) {
+        const s = st.services.find(x => x.id === serviceId);
+        const dayVal = severity === 'outage' ? 'outage' : 'degraded';
+        if (s) { s.history[89] = dayVal; s.status = dayVal; }
+      }
+      logActivity(`Incident created: ${title}`);
+      return json(res, 200, { ok: true, incident: inc });
+    } else if (b.op === 'incidentUpdate') {
+      const inc = (st.incidents || []).find(i => i.id === b.id);
+      if (!inc) return json(res, 404, { error: 'not_found' });
+      const text = String(b.text || '').trim().slice(0, 1200);
+      if (!text) return json(res, 400, { error: 'invalid', message: 'Update text is required.' });
+      inc.updates = inc.updates || [];
+      inc.updates.push({ text, at: new Date().toISOString() });
+      logActivity(`Incident updated: ${inc.title}`);
+    } else if (b.op === 'resolveIncident' || b.op === 'reopenIncident') {
+      const inc = (st.incidents || []).find(i => i.id === b.id);
+      if (!inc) return json(res, 404, { error: 'not_found' });
+      if (b.op === 'resolveIncident') {
+        inc.resolved = true; inc.resolvedAt = new Date().toISOString();
+        const note = String(b.note || '').trim().slice(0, 1200);
+        if (note) { inc.updates = inc.updates || []; inc.updates.push({ text: note, at: inc.resolvedAt }); }
+        logActivity(`Incident resolved: ${inc.title}`);
+      } else {
+        inc.resolved = false; inc.resolvedAt = null;
+        logActivity(`Incident reopened: ${inc.title}`);
+      }
+    } else if (b.op === 'deleteIncident') {
+      const inc = (st.incidents || []).find(i => i.id === b.id);
+      st.incidents = (st.incidents || []).filter(i => i.id !== b.id);
+      if (inc) logActivity(`Incident removed: ${inc.title}`);
     }
     st.updated = new Date().toISOString();
     save();

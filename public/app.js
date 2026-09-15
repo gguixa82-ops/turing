@@ -525,25 +525,23 @@ function onFaq() {
 }
 
 /* status */
+function incStamp(iso) {
+  try { return new Date(iso).toLocaleString(locale(), { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }); }
+  catch { return ''; }
+}
+function svcById(svc, id) {
+  const s = svc.find(x => x.id === id);
+  return s ? svcLabel(s) : T('incAllSvc');
+}
 async function viewStatus() {
   const data = await fetchJSON('/api/status');
   const svc = data.services;
   const worst = svc.some(s => s.status === 'outage') ? 'bad' : svc.some(s => s.status === 'degraded') ? 'warn' : 'ok';
   const title = worst === 'ok' ? T('stOk') : worst === 'warn' ? T('stWarn') : T('stBad');
-  const incidents = [];
-  svc.forEach(s => {
-    let run = null;
-    for (let i = 0; i < 90; i++) {
-      const v = s.history[i];
-      if (v !== 'ok') {
-        if (!run) run = { name: svcLabel(s), start: i, end: i, worst: v };
-        else { run.end = i; if (v === 'outage') run.worst = 'outage'; }
-      } else if (run) { incidents.push(run); run = null; }
-    }
-    if (run) incidents.push(run);
-  });
-  incidents.sort((a, b) => b.end - a.end);
-  const day = i => fmtDay(Date.now() - (89 - i) * 86400000);
+  const incs = data.incidents || [];
+  const active = incs.filter(i => !i.resolved);
+  const resolved = incs.filter(i => i.resolved).slice(0, 8);
+  const sevKey = i => i.severity === 'outage' ? 'incOutage' : i.severity === 'maintenance' ? 'incMaint' : 'incDegraded';
   return `
   <div class="wrap">
     <div class="page-head" style="padding-bottom:26px">
@@ -566,13 +564,29 @@ async function viewStatus() {
         <span><i style="background:var(--red)"></i>${esc(T('legendOut'))}</span>
       </span>
     </div>
-    <div class="incidents rv" style="--d:.56s">
-      ${incidents.length ? incidents.slice(0, 6).map(inc => `
+    ${active.length ? `
+    <div class="inc-pub rv" style="--d:.52s">
+      <div class="inc-pub-head"><span class="inc-live-dot ${worst === 'ok' ? 'warn' : worst}"></span>${esc(T('incActiveT'))}</div>
+      ${active.map(i => `
+      <div class="inc-pub-item ${i.severity}">
+        <div class="ip-top">
+          <span class="ip-sev">${esc(T(sevKey(i)))}</span>
+          <span class="ip-svc">${esc(svcById(svc, i.serviceId))}</span>
+          <span class="ip-time">${esc(T('incPosted', { t: timeAgo(i.created) }))}</span>
+        </div>
+        <div class="ip-title">${esc(i.title)}</div>
+        <div class="ip-msg">${esc(i.message)}</div>
+        ${(i.updates && i.updates.length) ? `<ul class="ip-updates">${i.updates.map(u => `<li><span class="iu-t">${esc(incStamp(u.at))}</span><span>${esc(u.text)}</span></li>`).join('')}</ul>` : ''}
+      </div>`).join('')}
+    </div>` : ''}
+    <div class="incidents rv" style="--d:.6s">
+      <div class="inc-h">${esc(T('incHistT'))}</div>
+      ${resolved.length ? resolved.map(i => `
         <div class="incident">
-          <span class="i-dot ${inc.worst === 'outage' ? 'o' : 'd'}"></span>
-          <div><div class="i-title">${esc(inc.name)} — ${inc.worst === 'outage' ? esc(T('incOutage')) : esc(T('incDegraded'))}</div>
-          <div class="i-sub">${esc(T('incResolved', { a: day(inc.start), b: day(inc.end) }))}</div></div>
-          <span class="i-date">${day(inc.end)}</span>
+          <span class="i-dot ${i.severity === 'outage' ? 'o' : 'd'}"></span>
+          <div><div class="i-title">${esc(i.title)}</div>
+          <div class="i-sub">${esc(T('incResolvedOn', { t: incStamp(i.resolvedAt || i.created) }))} · ${esc(svcById(svc, i.serviceId))}</div></div>
+          <span class="i-date">${fmtDay(new Date(i.resolvedAt || i.created).getTime())}</span>
         </div>`).join('') : `<div class="no-incidents">${esc(T('noIncidents'))}</div>`}
     </div>
   </div>`;
