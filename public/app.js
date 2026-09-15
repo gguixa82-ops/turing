@@ -108,21 +108,32 @@ function wireLangSwitch(scope = document) {
   }));
 }
 
-/* ---------- transition overlay ---------- */
+/* ---------- transition overlay (loading screen) ---------- */
 let transitioning = false;
+const LOAD_MIN = 520;   // tiempo mínimo que se ve la pantalla de carga (ms)
+const LOAD_MAX = 4000;  // tope de espera por contenido asíncrono (ms)
 function withTransition(fn) {
-  if (reducedMotion) { fn(); return; }
+  if (reducedMotion) { Promise.resolve().then(fn); return; }
   if (transitioning) { setTimeout(() => withTransition(fn), 120); return; }
   transitioning = true;
   const t = el('#transition');
   t.classList.remove('leaving');
   t.classList.add('active');
-  setTimeout(() => {
-    fn();
-    requestAnimationFrame(() => {
-      t.classList.add('leaving');
-      setTimeout(() => { t.classList.remove('active', 'leaving'); transitioning = false; }, 580);
-    });
+  const leave = () => requestAnimationFrame(() => {
+    t.classList.add('leaving');
+    setTimeout(() => { t.classList.remove('active', 'leaving'); transitioning = false; }, 580);
+  });
+  setTimeout(async () => {
+    const started = Date.now();
+    try {
+      await Promise.race([
+        Promise.resolve().then(fn),
+        new Promise(r => setTimeout(r, LOAD_MAX)),
+      ]);
+    } catch {}
+    const wait = LOAD_MIN - (Date.now() - started);
+    if (wait > 0) await new Promise(r => setTimeout(r, wait));
+    leave();
   }, 470);
 }
 
@@ -154,7 +165,7 @@ function matchRoute(path) {
 
 function go(path) {
   if (path === location.pathname) return;
-  withTransition(() => { history.pushState({}, '', path); renderRoute(path); });
+  withTransition(() => { history.pushState({}, '', path); return renderRoute(path); });
 }
 document.addEventListener('click', e => {
   const a = e.target.closest('a');
@@ -186,7 +197,10 @@ function renderHeader() {
     <span class="user-chip">
       <span class="avatar">${esc(state.user.name.trim().charAt(0).toUpperCase())}</span>
       <span class="uname">${esc(state.user.name)}</span>
-      <button class="uout" data-act="logout" title="${esc(T('signOut'))}">${esc(T('signOut'))}</button>
+      <span class="chip-div" aria-hidden="true"></span>
+      <button class="uout" data-act="logout" title="${esc(T('signOut'))}" aria-label="${esc(T('signOut'))}">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+      </button>
     </span>` : '';
   h.innerHTML = `
     <a class="wordmark" href="/">Turing</a>
@@ -359,7 +373,7 @@ function loadMoreResearch() {
   if (btn) btn.disabled = true;
   window.scrollTo({ top: 0, behavior: 'smooth' });
   setTimeout(() => {
-    withTransition(() => { fillResearch(true); });
+    withTransition(() => fillResearch(true));
   }, 420);
 }
 
@@ -734,7 +748,7 @@ function onLogin() {
         const r = await fetchJSON('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: $('#l-email').value, password: $('#l-pass').value }) });
         state.user = r.user;
         renderHeader();
-        withTransition(() => { history.pushState({}, '', '/'); renderRoute('/'); });
+        withTransition(() => { history.pushState({}, '', '/'); return renderRoute('/'); });
       } catch (e2) {
         err.textContent = apiError(e2, { invalid: 'e_invalidCreds', blocked: 'e_blockedLogin' });
         err.style.display = 'block';
@@ -779,7 +793,7 @@ function onRegister() {
         const r = await fetchJSON('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, email, password: p1 }) });
         state.user = r.user;
         renderHeader();
-        withTransition(() => { history.pushState({}, '', '/onboard'); renderRoute('/onboard'); });
+        withTransition(() => { history.pushState({}, '', '/onboard'); return renderRoute('/onboard'); });
       } catch (e2) {
         err.textContent = apiError(e2, { invalid: 'e_regInvalid', exists: 'e_exists', blocked: 'e_blockedReg' });
         err.style.display = 'block';
@@ -1133,8 +1147,7 @@ function renderRoute(path, { instant = false } = {}) {
   // auth redirects
   if (state.user && ['login', 'register', 'reset'].includes(route.view)) {
     history.replaceState({}, '', '/');
-    renderRoute('/');
-    return;
+    return renderRoute('/');
   }
 
   const apply = () => {
@@ -1147,12 +1160,12 @@ function renderRoute(path, { instant = false } = {}) {
       startPhilosophy();
     };
     const p = v.html(route.param, new URLSearchParams(location.search));
-    if (p && p.then) p.then(finish).catch(() => finish(viewNotFound()));
-    else finish(p);
+    if (p && p.then) return p.then(finish).catch(() => finish(viewNotFound()));
+    finish(p);
+    return Promise.resolve();
   };
 
-  if (instant) { apply(); return; }
-  apply();
+  return apply();
 }
 
 /* ---------- boot ---------- */
