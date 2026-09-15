@@ -497,6 +497,7 @@ $('#scrim').addEventListener('click', closeSideMobile);
   renderMain();
   $('#iaShell').hidden = false;
   requestAnimationFrame(() => $('#iaShell').classList.add('ready'));
+  if (window.Veil) Veil.hide();
   grow();
   input.focus();
 })();

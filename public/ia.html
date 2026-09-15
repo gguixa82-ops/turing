@@ -10,10 +10,20 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/ia.css?v=1">
+  <link rel="stylesheet" href="/ia.css?v=2">
+  <link rel="stylesheet" href="/veil.css?v=1">
 </head>
 <body>
   <div class="grain" aria-hidden="true"></div>
+
+  <!-- arrival/departure loading veil (starts covering the page) -->
+  <div class="transition active" id="veil" aria-hidden="true">
+    <div class="transition-inner">
+      <div class="transition-word"><span style="--d:.04s">T</span><span style="--d:.09s">u</span><span style="--d:.14s">r</span><span style="--d:.19s">i</span><span style="--d:.24s">n</span><span style="--d:.29s">g</span></div>
+      <div class="transition-line"></div>
+      <div class="transition-loader" role="status"><i></i></div>
+    </div>
+  </div>
 
   <div class="ia-shell" id="iaShell" hidden>
     <!-- sidebar: conversations -->
@@ -27,7 +37,7 @@
       <div class="side-label" data-i18n="iaChats">Chats</div>
       <div class="side-list" id="chatList"></div>
       <div class="side-bottom">
-        <a class="side-link" href="/account.html" id="accountLink">
+        <a class="side-link" href="/account.html" id="accountLink" data-veil>
           <span class="avatar" id="sideAva">·</span>
           <span class="sl-name" id="sideName"></span>
           <svg class="sl-gear" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.87l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.7 1.7 0 0 0-1.87-.34 1.7 1.7 0 0 0-1 1.55V21a2 2 0 1 1-4 0v-.09a1.7 1.7 0 0 0-1-1.55 1.7 1.7 0 0 0-1.87.34l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.7 1.7 0 0 0 .34-1.87 1.7 1.7 0 0 0-1.55-1H3a2 2 0 1 1 0-4h.09a1.7 1.7 0 0 0 1.55-1 1.7 1.7 0 0 0-.34-1.87l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.7 1.7 0 0 0 1.87.34h.01a1.7 1.7 0 0 0 1-1.55V3a2 2 0 1 1 4 0v.09a1.7 1.7 0 0 0 1 1.55h.01a1.7 1.7 0 0 0 1.87-.34l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.7 1.7 0 0 0-.34 1.87v.01a1.7 1.7 0 0 0 1.55 1H21a2 2 0 1 1 0 4h-.09a1.7 1.7 0 0 0-1.55 1z"/></svg>
@@ -39,13 +49,13 @@
     <div class="ia-main">
       <header class="ia-top">
         <button class="ia-burger" id="sideBtn" aria-label="Menu"><span></span><span></span></button>
-        <a class="wordmark" href="/">Turing</a>
+        <a class="wordmark" href="/" data-veil>Turing</a>
         <div class="ia-top-right">
           <div class="lang" id="langSwitch">
             <button class="lang-btn" id="langBtn" aria-expanded="false"><span id="langGlobe"></span><span class="lang-cur" id="langCur">EN</span></button>
             <div class="lang-menu" id="langMenu" hidden></div>
           </div>
-          <a class="top-avatar" id="topAva" href="/account.html"><span class="avatar" id="topAvaLetter">·</span></a>
+          <a class="top-avatar" id="topAva" href="/account.html" data-veil><span class="avatar" id="topAvaLetter">·</span></a>
         </div>
       </header>
 
@@ -72,12 +82,13 @@
       <div class="m-ic">⏳</div>
       <h3 data-i18n="iaErrLimitT">Message limit reached</h3>
       <p data-i18n="iaErrLimit">You have used all your messages for now. Take a breath — you can continue a bit later.</p>
-      <a class="m-link" href="/account.html" data-i18n="accHead">Account</a>
+      <a class="m-link" href="/account.html" data-i18n="accHead" data-veil>Account</a>
       <button class="btn m-close" id="limitClose">OK</button>
     </div>
   </div>
 
-  <script src="/i18n.js?v=11"></script>
-  <script src="/ia.js?v=1"></script>
+  <script src="/i18n.js?v=12"></script>
+  <script src="/veil.js?v=1"></script>
+  <script src="/ia.js?v=2"></script>
 </body>
 </html>

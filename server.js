@@ -121,7 +121,13 @@ function getSession(req) {
 function requireUser(req) {
   const s = getSession(req);
   if (!s || s.role !== 'user') return null;
-  return db.users.find(u => u.id === s.id) || null;
+  const u = db.users.find(x => x.id === s.id);
+  return u && !u.banned ? u : null; // banned accounts lose access immediately
+}
+function killUserSessions(userId) {
+  for (const [tok, s] of Object.entries(db.sessions)) {
+    if (s.role === 'user' && s.id === userId) delete db.sessions[tok];
+  }
 }
 function requireAdmin(req) {
   const s = getSession(req);
@@ -184,17 +190,19 @@ function escapeHtml(s) {
 const DEFAULT_SYSTEM_PROMPT = 'You are Turing, a precise, thoughtful AI assistant. Reason carefully, answer directly, and avoid filler. Always reply in the user\'s language. Use Markdown when it helps: headings, lists, and fenced code blocks for code.';
 
 // rolling-window usage: { used, limit, windowHours, remaining, resetsAt }
+// per-user overrides (admin panel) take precedence over the global limit
 function usageFor(u) {
   const winMs = db.ai.limitWindowHours * 3600 * 1000;
   const now = Date.now();
   const arr = (db.usage[u.id] || []).filter(t => t > now - winMs);
   db.usage[u.id] = arr;
+  const limit = Number.isFinite(u.limitMessages) && u.limitMessages > 0 ? u.limitMessages : db.ai.limitMessages;
   const resetsAt = arr.length ? new Date(arr[0] + winMs).toISOString() : null;
   return {
     used: arr.length,
-    limit: db.ai.limitMessages,
+    limit,
     windowHours: db.ai.limitWindowHours,
-    remaining: Math.max(0, db.ai.limitMessages - arr.length),
+    remaining: Math.max(0, limit - arr.length),
     resetsAt,
   };
 }
@@ -382,7 +390,7 @@ async function handleApi(req, res, url) {
   if (m === 'GET' && p === '/api/auth/me') {
     const u = requireUser(req);
     if (!u) return json(res, 401, { error: 'unauthorized' });
-    return json(res, 200, { user: { name: u.name, email: u.email, created: u.created }, onboarded: !!(u.onboard && u.onboard.acceptedTerms) });
+    return json(res, 200, { user: { name: u.name, email: u.email, created: u.created, plan: u.plan || 'free' }, onboarded: !!(u.onboard && u.onboard.acceptedTerms) });
   }
   if (m === 'POST' && p === '/api/auth/logout') {
     const s = getSession(req);
@@ -411,7 +419,7 @@ async function handleApi(req, res, url) {
     if (!u) return json(res, 401, { error: 'unauthorized' });
     const usage = usageFor(u);
     save();
-    return json(res, 200, { user: { name: u.name, email: u.email, created: u.created }, onboard: u.onboard || null, usage });
+    return json(res, 200, { user: { name: u.name, email: u.email, created: u.created }, plan: u.plan || 'free', onboard: u.onboard || null, usage });
   }
   if (m === 'POST' && p === '/api/account/delete') {
     const u = requireUser(req);
@@ -522,7 +530,7 @@ async function handleApi(req, res, url) {
     if (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 8) return json(res, 400, { error: 'invalid', message: 'Provide a name, a valid email and a password of at least 8 characters.' });
     if (db.users.some(u => u.email === email)) return json(res, 409, { error: 'exists', message: 'An account with this email already exists.' });
     const salt = newSalt();
-    const user = { id: crypto.randomBytes(8).toString('hex'), name, email, salt, passHash: hashPw(password, salt), created: new Date().toISOString(), lastLogin: null };
+    const user = { id: crypto.randomBytes(8).toString('hex'), name, email, salt, passHash: hashPw(password, salt), created: new Date().toISOString(), lastLogin: null, plan: 'free', banned: false, limitMessages: null };
     db.users.push(user);
     logActivity(`New user registered: ${name} <${email}>`);
     const r = await sendEmail({ to: email, subject: 'Welcome to Turing', html: welcomeEmail(name, origin) });
@@ -540,6 +548,7 @@ async function handleApi(req, res, url) {
     const password = String(b.password || '');
     const u = db.users.find(x => x.email === email);
     if (!u || hashPw(password, u.salt) !== u.passHash) return json(res, 401, { error: 'invalid', message: 'Incorrect email or password.' });
+    if (u.banned) return json(res, 403, { error: 'banned', message: 'This account has been suspended.' });
     u.lastLogin = new Date().toISOString();
     logActivity(`User login: ${u.name}`);
     const token = createSession('user', u.id);
@@ -771,6 +780,66 @@ async function handleApi(req, res, url) {
     save();
     return json(res, 200, { ok: true, ai: { model: a.model, hasKey: !!a.apiKey, limitMessages: a.limitMessages, limitWindowHours: a.limitWindowHours } });
   }
+  /* ---- user management ---- */
+  if (m === 'GET' && p === '/api/admin/users') {
+    const users = db.users.map(u => ({
+      id: u.id, name: u.name, email: u.email, created: u.created, lastLogin: u.lastLogin,
+      plan: u.plan || 'free', banned: !!u.banned,
+      limitMessages: Number.isFinite(u.limitMessages) && u.limitMessages > 0 ? u.limitMessages : null,
+      chats: (db.chats[u.id] || []).length,
+      usage: usageFor(u),
+    }));
+    save();
+    return json(res, 200, { users, globalLimit: db.ai.limitMessages, globalWindowHours: db.ai.limitWindowHours });
+  }
+  const um = p.match(/^\/api\/admin\/users\/([a-z0-9]+)$/);
+  if (m === 'POST' && um) {
+    const u = db.users.find(x => x.id === um[1]);
+    if (!u) return json(res, 404, { error: 'not_found' });
+    const b = await readBody(req);
+    if (b.op === 'ban') {
+      u.banned = !!b.banned;
+      if (u.banned) killUserSessions(u.id);
+      logActivity(`User ${u.banned ? 'banned' : 'unbanned'}: ${u.name} <${u.email}>`);
+    } else if (b.op === 'plan') {
+      const plan = ['free', 'maker', 'expert', 'core', 'enterprise'].includes(b.plan) ? b.plan : 'free';
+      u.plan = plan;
+      logActivity(`User plan changed: ${u.name} → ${plan}`);
+    } else if (b.op === 'info') {
+      const name = String(b.name || '').trim().slice(0, 60);
+      const email = String(b.email || '').trim().toLowerCase().slice(0, 120);
+      if (!name || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return json(res, 400, { error: 'invalid', message: 'A name and a valid email are required.' });
+      if (db.users.some(x => x.email === email && x.id !== u.id)) return json(res, 409, { error: 'exists', message: 'Another account already uses this email.' });
+      u.name = name; u.email = email;
+      logActivity(`User info updated: ${name} <${email}>`);
+    } else if (b.op === 'limit') {
+      if (b.limitMessages === null || b.limitMessages === '' || b.limitMessages === undefined) {
+        u.limitMessages = null;
+        logActivity(`User limit cleared (global applies): ${u.name}`);
+      } else {
+        const n = parseInt(b.limitMessages, 10);
+        if (!Number.isFinite(n) || n < 1) return json(res, 400, { error: 'invalid', message: 'Limit must be a positive number.' });
+        u.limitMessages = Math.min(10000, n);
+        logActivity(`User limit set: ${u.name} → ${u.limitMessages} msgs/window`);
+      }
+    } else if (b.op === 'resetUsage') {
+      db.usage[u.id] = [];
+      logActivity(`Usage reset for user: ${u.name}`);
+    } else if (b.op === 'delete') {
+      db.users = db.users.filter(x => x.id !== u.id);
+      delete db.chats[u.id];
+      delete db.usage[u.id];
+      killUserSessions(u.id);
+      logActivity(`User deleted by admin: ${u.name} <${u.email}>`);
+      save();
+      return json(res, 200, { ok: true });
+    } else {
+      return json(res, 400, { error: 'invalid' });
+    }
+    save();
+    return json(res, 200, { ok: true });
+  }
+
   if (m === 'POST' && p === '/api/admin/ai-test') {
     const a = db.ai;
     if (!a.apiKey) return json(res, 400, { ok: false, detail: 'No API key saved yet.' });

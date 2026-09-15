@@ -66,7 +66,7 @@ $('#aNav').addEventListener('click', e => {
 function openSection(sec) {
   state.section = sec;
   $$('#aNav button').forEach(b => b.classList.toggle('active', b.dataset.sec === sec));
-  ({ overview: renderOverview, support: renderSupport, status: renderStatus, ai: renderAI, site: renderSite })[sec]();
+  ({ overview: renderOverview, support: renderSupport, users: renderUsers, status: renderStatus, ai: renderAI, site: renderSite })[sec]();
 }
 
 /* ---------- AI (Groq) ---------- */
@@ -354,6 +354,100 @@ async function renderSupport() {
   });
 }
 
+/* ---------- users ---------- */
+const PLANS = ['free', 'maker', 'expert', 'core', 'enterprise'];
+
+async function renderUsers() {
+  const main = $('#aMain');
+  main.innerHTML = `<div class="sec" style="opacity:0"><div class="a-head"><h1>Loading…</h1></div></div>`;
+  let d;
+  try { d = await api('/api/admin/users'); } catch { return; }
+  state.users = d.users;
+  state.globalLimit = d.globalLimit;
+  state.globalWindow = d.globalWindowHours;
+  main.innerHTML = `
+  <div class="sec">
+    <div class="a-head"><div><h1>Users</h1><div class="a-sub">${d.users.length} registered · global limit <b style="color:var(--text)">${d.globalLimit} messages / ${d.globalWindowHours}h</b> (overridable per user below).</div></div></div>
+    ${d.users.length
+      ? `<div class="usr-list">${d.users.map((u, i) => usrCard(u, i)).join('')}</div>`
+      : '<div class="empty-state" style="min-height:300px"><span class="e-ic">◔</span><div>No users registered yet.</div></div>'}
+  </div>`;
+
+  $$('.usr-card', main).forEach(card => {
+    const id = card.dataset.uid;
+    const u = state.users.find(x => x.id === id);
+    card.querySelector('[data-uact="saveinfo"]').addEventListener('click', async () => {
+      const name = card.querySelector('.usr-name').value.trim();
+      const email = card.querySelector('.usr-email').value.trim();
+      if (name === u.name && email === u.email) return;
+      try { await post(`/api/admin/users/${id}`, { op: 'info', name, email }); toast('User info updated'); }
+      catch (ex) { toast(ex.data?.message || 'Failed to update', true); }
+      renderUsers();
+    });
+    card.querySelector('.usr-plan').addEventListener('change', async e => {
+      try { await post(`/api/admin/users/${id}`, { op: 'plan', plan: e.target.value }); toast(`Plan → ${e.target.value}`); }
+      catch { toast('Failed', true); }
+      renderUsers();
+    });
+    card.querySelector('[data-uact="savelimit"]').addEventListener('click', async () => {
+      const raw = card.querySelector('.usr-limit').value.trim();
+      try {
+        await post(`/api/admin/users/${id}`, { op: 'limit', limitMessages: raw === '' ? null : parseInt(raw, 10) });
+        toast(raw === '' ? 'Limit cleared — global applies' : `Limit set to ${raw}`);
+      } catch (ex) { toast(ex.data?.message || 'Failed', true); }
+      renderUsers();
+    });
+    card.querySelector('[data-uact="resetusage"]').addEventListener('click', async () => {
+      try { await post(`/api/admin/users/${id}`, { op: 'resetUsage' }); toast('Usage counter reset'); } catch { toast('Failed', true); }
+      renderUsers();
+    });
+    card.querySelector('[data-uact="ban"]').addEventListener('click', async () => {
+      try { await post(`/api/admin/users/${id}`, { op: 'ban', banned: !u.banned }); toast(u.banned ? 'User unbanned' : 'User banned — access revoked', true); }
+      catch { toast('Failed', true); }
+      renderUsers();
+    });
+    card.querySelector('[data-uact="delete"]').addEventListener('click', async () => {
+      if (!confirm(`Delete "${u.name}" permanently? Their chats and usage will be erased.`)) return;
+      try { await post(`/api/admin/users/${id}`, { op: 'delete' }); toast('User deleted'); } catch { toast('Failed', true); }
+      renderUsers();
+    });
+  });
+}
+function usrCard(u, i) {
+  const initial = (u.name || '?').trim().charAt(0).toUpperCase() || '?';
+  return `
+  <div class="usr-card ${u.banned ? 'banned' : ''}" data-uid="${u.id}" style="--i:${i}">
+    <div class="usr-top">
+      <span class="usr-avatar">${esc(initial)}</span>
+      <div class="usr-idwrap">
+        <div class="usr-idrow">
+          <input class="usr-name" value="${esc(u.name)}" maxlength="60">
+          <span class="usr-plan-badge p-${u.plan}">${esc(u.plan.toUpperCase())}</span>
+          ${u.banned ? '<span class="usr-flag">BANNED</span>' : ''}
+        </div>
+        <input class="usr-email" value="${esc(u.email)}" maxlength="120">
+      </div>
+      <button class="btn btn-ghost btn-sm" data-uact="saveinfo">Save info</button>
+    </div>
+    <div class="usr-meta">
+      Joined ${fullDate(u.created)} · Last login ${u.lastLogin ? fullDate(u.lastLogin) : 'never'} · ${u.chats} chat${u.chats === 1 ? '' : 's'} · <b>${u.usage.used}/${u.usage.limit}</b> messages in current window
+    </div>
+    <div class="usr-controls">
+      <div class="uc-field"><label>Plan</label>
+        <select class="usr-plan">${PLANS.map(pl => `<option value="${pl}" ${pl === u.plan ? 'selected' : ''}>${pl.charAt(0).toUpperCase() + pl.slice(1)}</option>`).join('')}</select>
+      </div>
+      <div class="uc-field"><label>Message limit</label>
+        <input class="usr-limit" type="number" min="1" max="10000" value="${u.limitMessages ?? ''}" placeholder="Global (${state.globalLimit})">
+      </div>
+      <button class="btn btn-ghost btn-sm" data-uact="savelimit">Apply limit</button>
+      <button class="btn btn-ghost btn-sm" data-uact="resetusage">Reset usage</button>
+      <span class="uc-spacer"></span>
+      <button class="btn ${u.banned ? 'btn-primary' : 'btn-warn'} btn-sm" data-uact="ban">${u.banned ? 'Unban' : 'Ban'}</button>
+      <button class="btn btn-danger btn-sm" data-uact="delete">Delete</button>
+    </div>
+  </div>`;
+}
+
 /* ---------- status ---------- */
 const STATUSES = ['ok', 'degraded', 'outage'];
 const STAT_LABEL = { ok: 'Operational', degraded: 'Degraded', outage: 'Outage' };
@@ -519,6 +613,26 @@ async function renderStatus() {
       renderStatus();
     });
   });
+}
+function svcRow(s, i) {
+  const today = new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const ninetyAgo = new Date(Date.now() - 89 * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  return `
+  <div class="svc-row" style="--i:${i}" data-id="${s.id}">
+    <div class="svr-top">
+      <input name="name" value="${esc(s.name)}" maxlength="60">
+      <div class="seg">
+        ${STATUSES.map(st => `<button data-st="${st}" class="${s.status === st ? (st === 'ok' ? 'on-ok' : st === 'degraded' ? 'on-deg' : 'on-out') : ''}">${STAT_LABEL[st]}</button>`).join('')}
+      </div>
+      <button class="btn btn-ghost btn-sm svr-del" data-reset>90 days → clean</button>
+      <button class="btn btn-danger btn-sm" data-del>Remove</button>
+    </div>
+    <input class="svr-desc" value="${esc(s.description)}" maxlength="120" placeholder="Description">
+    <div class="day-grid">
+      ${s.history.map((v, di) => `<button class="day ${v === 'degraded' ? 'd' : v === 'outage' ? 'o' : ''} ${di === 89 ? 'today' : ''}" data-i="${di}" data-v="${v}" title="${di === 89 ? 'Today' : new Date(Date.now() - (89 - di) * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · ${STAT_LABEL[v]} — click to change"></button>`).join('')}
+    </div>
+    <div class="day-scale"><span>${ninetyAgo}</span><span>Today</span></div>
+  </div>`;
 }
 function incSvcName(inc) {
   if (!inc.serviceId) return 'All services';

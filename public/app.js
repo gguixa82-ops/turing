@@ -173,11 +173,15 @@ document.addEventListener('click', e => {
   const href = a.getAttribute('href');
   if (!href || !href.startsWith('/') || href.startsWith('//')) return;
   if (a.target === '_blank' || a.hasAttribute('download')) return;
-  // standalone pages (ia.html / account.html …) navigate natively, with the transition veil
+  // standalone pages (ia.html / account.html …) navigate natively, behind the loading screen
   if (/\/[^/]*\.[a-z0-9]+$/i.test(href)) {
     e.preventDefault();
     closeMobileMenu();
-    withTransition(() => location.assign(href));
+    if (reducedMotion) { location.assign(href); return; }
+    const t = el('#transition');
+    t.classList.remove('leaving');
+    t.classList.add('active');
+    setTimeout(() => location.assign(href), 540);
     return;
   }
   e.preventDefault();
@@ -780,7 +784,7 @@ function onLogin() {
           withTransition(() => { history.pushState({}, '', '/'); return renderRoute('/'); });
         }
       } catch (e2) {
-        err.textContent = apiError(e2, { invalid: 'e_invalidCreds', blocked: 'e_blockedLogin' });
+        err.textContent = apiError(e2, { invalid: 'e_invalidCreds', blocked: 'e_blockedLogin', banned: 'e_bannedLogin' });
         err.style.display = 'block';
       }
     });

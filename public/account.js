@@ -10,7 +10,7 @@ let lang = TURING_I18N.detectLang();
 document.documentElement.lang = lang;
 const locale = () => (lang === 'en' ? 'en-US' : lang);
 
-const state = { user: null, usage: null };
+const state = { user: null, usage: null, plan: 'free' };
 
 async function fetchJSON(url, opts) {
   const r = await fetch(url, opts);
@@ -72,6 +72,15 @@ function fillDynamic() {
   try {
     $('#kvJoined').textContent = new Date(u.created).toLocaleDateString(locale(), { year: 'numeric', month: 'long', day: 'numeric' });
   } catch { $('#kvJoined').textContent = u.created; }
+
+  // plan (dynamic — admin can upgrade users)
+  const plan = String(state.plan || 'free').toLowerCase();
+  const badge = $('.plan-badge');
+  if (badge) badge.textContent = plan.charAt(0).toUpperCase() + plan.slice(1);
+  const planBody = $('.card [data-i18n="accPlanDesc"]');
+  const planNote = $('.card [data-i18n="accPlanNote"]');
+  if (planBody) planBody.textContent = plan === 'free' ? T('accPlanDesc') : T('accPlanOn', { p: plan.charAt(0).toUpperCase() + plan.slice(1) });
+  if (planNote) planNote.style.display = plan === 'free' ? '' : 'none';
 
   const usage = state.usage;
   if (usage) {
@@ -143,10 +152,12 @@ $('#passForm').addEventListener('submit', async e => {
   }
   state.user = data.user;
   state.usage = data.usage;
+  state.plan = data.plan || 'free';
   applyStaticI18n();
   buildLangMenu();
   $('#accShell').hidden = false;
   requestAnimationFrame(() => $('#accShell').classList.add('ready'));
+  if (window.Veil) Veil.hide();
   // live countdown refresh
   setInterval(fillDynamic, 30000);
 })();

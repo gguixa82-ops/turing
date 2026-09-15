@@ -416,6 +416,78 @@
   },
   "activity": [
     {
+      "at": "2026-09-15T22:04:50.291Z",
+      "text": "Admin login"
+    },
+    {
+      "at": "2026-09-15T22:04:50.124Z",
+      "text": "User deleted by admin: Cesc Roca <cesc@test.io>"
+    },
+    {
+      "at": "2026-09-15T22:04:50.115Z",
+      "text": "User deleted by admin: Berta Roca <berta2@test.io>"
+    },
+    {
+      "at": "2026-09-15T22:04:43.782Z",
+      "text": "Usage reset for user: Berta Roca"
+    },
+    {
+      "at": "2026-09-15T22:04:43.774Z",
+      "text": "User info updated: Berta Roca <berta2@test.io>"
+    },
+    {
+      "at": "2026-09-15T22:04:43.765Z",
+      "text": "User unbanned: Berta Lan <berta@test.io>"
+    },
+    {
+      "at": "2026-09-15T22:04:43.698Z",
+      "text": "User banned: Berta Lan <berta@test.io>"
+    },
+    {
+      "at": "2026-09-15T22:04:43.657Z",
+      "text": "User limit set: Berta Lan → 99 msgs/window"
+    },
+    {
+      "at": "2026-09-15T22:04:43.649Z",
+      "text": "User plan changed: Berta Lan → expert"
+    },
+    {
+      "at": "2026-09-15T22:04:43.578Z",
+      "text": "New user registered: Cesc Roca <cesc@test.io>"
+    },
+    {
+      "at": "2026-09-15T22:04:43.525Z",
+      "text": "New user registered: Berta Lan <berta@test.io>"
+    },
+    {
+      "at": "2026-09-15T22:04:43.461Z",
+      "text": "Admin login"
+    },
+    {
+      "at": "2026-09-15T22:04:15.947Z",
+      "text": "Admin login"
+    },
+    {
+      "at": "2026-09-15T22:04:10.626Z",
+      "text": "Admin login"
+    },
+    {
+      "at": "2026-09-15T21:58:42.442Z",
+      "text": "Admin login"
+    },
+    {
+      "at": "2026-09-15T21:58:18.959Z",
+      "text": "Admin login"
+    },
+    {
+      "at": "2026-09-15T21:58:10.757Z",
+      "text": "Admin login"
+    },
+    {
+      "at": "2026-09-15T21:56:27.650Z",
+      "text": "Admin login"
+    },
+    {
       "at": "2026-09-15T21:46:05.149Z",
       "text": "AI config saved — model llama-3.3-70b-versatile · no key"
     },
@@ -472,13 +544,7 @@
       "text": "Removed test/fabricated data (fake emails and accounts)"
     }
   ],
-  "sessions": {
-    "236f126f0393294b1427313d1bb845f4b22629fa64931164": {
-      "role": "admin",
-      "id": "admin",
-      "exp": 1790113536712
-    }
-  },
+  "sessions": {},
   "ai": {
     "apiKey": "",
     "model": "llama-3.3-70b-versatile",
