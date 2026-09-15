@@ -444,11 +444,5 @@
       "text": "Removed test/fabricated data (fake emails and accounts)"
     }
   ],
-  "sessions": {
-    "c4c50d3a31d2ef370b57ce9941b6400622af53f2c54f1d60": {
-      "role": "admin",
-      "id": "admin",
-      "exp": 1790112213610
-    }
-  }
+  "sessions": {}
 }
