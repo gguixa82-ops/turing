@@ -416,6 +416,34 @@
   },
   "activity": [
     {
+      "at": "2026-09-15T21:46:05.149Z",
+      "text": "AI config saved — model llama-3.3-70b-versatile · no key"
+    },
+    {
+      "at": "2026-09-15T21:45:38.706Z",
+      "text": "Account deleted: Ana Prova <ana@test.io>"
+    },
+    {
+      "at": "2026-09-15T21:45:38.641Z",
+      "text": "Password changed: Ana Prova"
+    },
+    {
+      "at": "2026-09-15T21:45:36.742Z",
+      "text": "AI config saved — model llama-3.3-70b-versatile · key set"
+    },
+    {
+      "at": "2026-09-15T21:45:36.712Z",
+      "text": "Admin login"
+    },
+    {
+      "at": "2026-09-15T21:45:19.148Z",
+      "text": "Onboarding completed: Ana Prova"
+    },
+    {
+      "at": "2026-09-15T21:45:19.129Z",
+      "text": "New user registered: Ana Prova <ana@test.io>"
+    },
+    {
       "at": "2026-09-15T21:23:42.604Z",
       "text": "Status history updated: Web experience"
     },
@@ -444,5 +472,20 @@
       "text": "Removed test/fabricated data (fake emails and accounts)"
     }
   ],
-  "sessions": {}
+  "sessions": {
+    "236f126f0393294b1427313d1bb845f4b22629fa64931164": {
+      "role": "admin",
+      "id": "admin",
+      "exp": 1790113536712
+    }
+  },
+  "ai": {
+    "apiKey": "",
+    "model": "llama-3.3-70b-versatile",
+    "limitMessages": 15,
+    "limitWindowHours": 6,
+    "systemPrompt": ""
+  },
+  "chats": {},
+  "usage": {}
 }

@@ -230,6 +230,26 @@ input, select, textarea { font-family: inherit; }
 .inc-res-mid { flex: 1; min-width: 0; }
 .inc-res .inc-title { font-size: 13.5px; margin-bottom: 2px; }
 
+/* AI section */
+.ai-status { display: inline-flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; padding: 7px 14px; border-radius: 999px; border: 1px solid var(--line); color: var(--text-2); white-space: nowrap; }
+.ai-status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); }
+.ai-status.ok { color: var(--green); border-color: rgba(62,207,142,0.35); }
+.ai-status.ok .dot { background: var(--green); box-shadow: 0 0 10px rgba(62,207,142,0.6); }
+.ai-status.warn { color: var(--amber); border-color: rgba(232,176,75,0.4); }
+.ai-status.warn .dot { background: var(--amber); box-shadow: 0 0 10px rgba(232,176,75,0.6); }
+.ai-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+.ai-grid .row-2 { grid-template-columns: 1fr 1fr; }
+.card h3 .ai-tag { font-size: 10px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--amber); background: rgba(232,176,75,0.1); border: 1px solid rgba(232,176,75,0.3); padding: 2px 8px; border-radius: 999px; vertical-align: middle; margin-left: 8px; }
+.ai-hint { font-size: 12px; color: var(--text-3); line-height: 1.55; margin-top: 11px; }
+.ai-hint a { text-underline-offset: 3px; }
+.ai-hint b { font-weight: 700; }
+.ai-key-row { display: flex; gap: 10px; align-items: stretch; flex-wrap: wrap; }
+.ai-actions { display: flex; align-items: center; gap: 10px; margin-top: 16px; flex-wrap: wrap; }
+.ai-test-result { font-size: 13px; color: var(--text-3); font-weight: 500; }
+.ai-test-result.ok { color: var(--green); }
+.ai-test-result.bad { color: var(--red); }
+@media (max-width: 900px) { .ai-grid { grid-template-columns: 1fr; } }
+
 /* toast */
 .toast { position: fixed; bottom: 26px; left: 50%; transform: translate(-50%, 16px); z-index: 90; background: #161618; border: 1px solid var(--line-2); border-radius: 12px; padding: 12px 18px; font-size: 13.5px; font-weight: 500; opacity: 0; pointer-events: none; transition: all .4s var(--ease); display: flex; gap: 10px; align-items: center; box-shadow: 0 18px 50px rgba(0,0,0,0.6); max-width: calc(100vw - 40px); }
 .toast.show { opacity: 1; transform: translate(-50%, 0); }

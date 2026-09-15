@@ -173,6 +173,13 @@ document.addEventListener('click', e => {
   const href = a.getAttribute('href');
   if (!href || !href.startsWith('/') || href.startsWith('//')) return;
   if (a.target === '_blank' || a.hasAttribute('download')) return;
+  // standalone pages (ia.html / account.html …) navigate natively, with the transition veil
+  if (/\/[^/]*\.[a-z0-9]+$/i.test(href)) {
+    e.preventDefault();
+    closeMobileMenu();
+    withTransition(() => location.assign(href));
+    return;
+  }
   e.preventDefault();
   closeMobileMenu();
   go(href);
@@ -194,9 +201,13 @@ function renderHeader() {
   const active = state.route === 'research' ? '/research' : state.route === 'docs' ? '/docs' : '';
   h.classList.toggle('sticky', !isHome);
   const chip = state.user ? `
+    <a class="hdr-cta" href="/ia.html">
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+      ${esc(T('openAi'))}
+    </a>
     <span class="user-chip">
       <span class="avatar">${esc(state.user.name.trim().charAt(0).toUpperCase())}</span>
-      <span class="uname">${esc(state.user.name)}</span>
+      <a class="uname" href="/account.html">${esc(state.user.name)}</a>
       <span class="chip-div" aria-hidden="true"></span>
       <button class="uout" data-act="logout" title="${esc(T('signOut'))}" aria-label="${esc(T('signOut'))}">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
@@ -762,7 +773,12 @@ function onLogin() {
         const r = await fetchJSON('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: $('#l-email').value, password: $('#l-pass').value }) });
         state.user = r.user;
         renderHeader();
-        withTransition(() => { history.pushState({}, '', '/'); return renderRoute('/'); });
+        const next = new URLSearchParams(location.search).get('next') || '';
+        if (next.startsWith('/') && !next.startsWith('//')) {
+          withTransition(() => location.assign(next));
+        } else {
+          withTransition(() => { history.pushState({}, '', '/'); return renderRoute('/'); });
+        }
       } catch (e2) {
         err.textContent = apiError(e2, { invalid: 'e_invalidCreds', blocked: 'e_blockedLogin' });
         err.style.display = 'block';
@@ -1000,7 +1016,7 @@ async function onOnboard() {
         <svg class="onb-checkmark" viewBox="0 0 80 80" fill="none"><circle class="sv-circle" cx="40" cy="40" r="36" stroke-width="1.5"/><path class="sv-check" d="M26 41.5l9.5 9.5L55 30" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         <h1>${words(esc(T('finalT', { name: first })), 0.5)}</h1>
         <p class="onb-sub rv" style="--d:1.1s">${esc(T('finalSub'))}</p>
-        <a class="btn btn-primary rv onb-final-cta" style="--d:1.3s" href="/">${esc(T('startConv'))} <span class="arr">→</span></a>
+        <a class="btn btn-primary rv onb-final-cta" style="--d:1.3s" href="/ia.html">${esc(T('startConv'))} <span class="arr">→</span></a>
       </div>`;
   }
 

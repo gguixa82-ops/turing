@@ -66,7 +66,142 @@ $('#aNav').addEventListener('click', e => {
 function openSection(sec) {
   state.section = sec;
   $$('#aNav button').forEach(b => b.classList.toggle('active', b.dataset.sec === sec));
-  ({ overview: renderOverview, support: renderSupport, status: renderStatus, site: renderSite })[sec]();
+  ({ overview: renderOverview, support: renderSupport, status: renderStatus, ai: renderAI, site: renderSite })[sec]();
+}
+
+/* ---------- AI (Groq) ---------- */
+const GROQ_MODELS = [
+  { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B Versatile — best all-round' },
+  { id: 'openai/gpt-oss-120b', label: 'GPT-OSS 120B — strong reasoning' },
+  { id: 'openai/gpt-oss-20b', label: 'GPT-OSS 20B — fast & light' },
+  { id: 'meta-llama/llama-4-maverick-17b-128e-instruct', label: 'Llama 4 Maverick 17B — large MoE' },
+  { id: 'meta-llama/llama-4-scout-17b-16e-instruct', label: 'Llama 4 Scout 17B — efficient MoE' },
+  { id: 'qwen/qwen3-32b', label: 'Qwen3 32B' },
+  { id: 'moonshotai/kimi-k2-instruct-0905', label: 'Kimi K2 Instruct' },
+  { id: 'deepseek-r1-distill-llama-70b', label: 'DeepSeek R1 Distill 70B — deep reasoning' },
+  { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B Instant — cheapest / fastest' },
+];
+
+async function renderAI() {
+  const main = $('#aMain');
+  main.innerHTML = `<div class="sec" style="opacity:0"><div class="a-head"><h1>Loading…</h1></div></div>`;
+  let ai;
+  try { ai = (await api('/api/admin/ai')).ai; } catch { return; }
+  const known = GROQ_MODELS.some(m => m.id === ai.model);
+  const options = GROQ_MODELS.map(m =>
+    `<option value="${esc(m.id)}" ${m.id === ai.model ? 'selected' : ''}>${esc(m.label)}</option>`).join('');
+  main.innerHTML = `
+  <div class="sec">
+    <div class="a-head"><div><h1>AI</h1><div class="a-sub">The model behind <b style="color:var(--text)">/ia.html</b>. Groq API key, model and usage limits.</div></div>
+      <span class="ai-status ${ai.hasKey ? 'ok' : 'warn'}">${ai.hasKey ? '<span class="dot"></span>Configured' : '<span class="dot"></span>Needs an API key'}</span>
+    </div>
+
+    <div class="ai-grid">
+      <div class="card">
+        <h3>Model</h3>
+        <div class="field" style="margin:0 0 12px"><label for="aiModel">Groq model</label>
+          <select id="aiModel">
+            ${options}
+            <option value="__custom" ${known ? '' : 'selected'}>Custom / other model id…</option>
+          </select>
+        </div>
+        <div class="field" id="aiCustomWrap" style="margin:0;${known ? 'display:none' : ''}"><label for="aiCustom">Custom model id</label>
+          <input id="aiCustom" value="${known ? '' : esc(ai.model)}" placeholder="e.g. mistral-saba-24b"></div>
+        <p class="ai-hint">Any Groq chat-completions model id works. The list covers the current catalog.</p>
+      </div>
+
+      <div class="card">
+        <h3>Usage limit <span class="ai-tag">not shown on the chat page</span></h3>
+        <div class="row-2">
+          <div class="field" style="margin:0"><label for="aiLimMsgs">Messages per window</label>
+            <input id="aiLimMsgs" type="number" min="1" max="500" value="${ai.limitMessages}"></div>
+          <div class="field" style="margin:0"><label for="aiLimHours">Window (hours)</label>
+            <input id="aiLimHours" type="number" min="1" max="72" value="${ai.limitWindowHours}"></div>
+        </div>
+        <p class="ai-hint">Rolling window per user. Default is <b style="color:var(--text)">15 messages every 6 hours</b>. Users only see a gentle "try again later" — never the numbers.</p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <h3>Groq API key</h3>
+      <div class="ai-key-row">
+        <div class="pw-wrap" style="flex:1"><input id="aiKey" type="password" autocomplete="new-password" placeholder="${ai.hasKey ? 'Saved key: ' + esc(ai.keyMasked) + ' — paste a new one to replace' : 'gsk_…'}"><button type="button" class="pw-toggle" data-target="aiKey">Show</button></div>
+        <button class="btn btn-ghost btn-sm" id="aiClearKey" ${ai.hasKey ? '' : 'disabled'}>Remove key</button>
+      </div>
+      <p class="ai-hint">Create a free key at <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="color:var(--text);text-decoration:underline">console.groq.com/keys</a>. It is stored on the server and never sent to the browser.</p>
+      <div class="ai-actions">
+        <button class="btn btn-primary btn-sm" id="aiSave">Save configuration <span style="opacity:.6">→</span></button>
+        <button class="btn btn-ghost btn-sm" id="aiTest">Test connection</button>
+        <span class="ai-test-result" id="aiTestResult"></span>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <h3>System prompt <span class="ai-tag">optional</span></h3>
+      <div class="field" style="margin:0"><textarea id="aiSys" style="min-height:90px" maxlength="1200" placeholder="Leave empty to use Turing's default personality…">${esc(ai.systemPrompt || '')}</textarea></div>
+      <p class="ai-hint">Overrides the built-in assistant personality for every conversation.</p>
+    </div>
+  </div>`;
+
+  const modelSel = $('#aiModel');
+  modelSel.addEventListener('change', () => {
+    $('#aiCustomWrap').style.display = modelSel.value === '__custom' ? '' : 'none';
+  });
+  bindPwTogglesAI();
+
+  function currentModel() {
+    return modelSel.value === '__custom' ? $('#aiCustom').value.trim() : modelSel.value;
+  }
+  $('#aiSave').addEventListener('click', async () => {
+    const model = currentModel();
+    if (!model) { toast('Choose or type a model id', true); return; }
+    const key = $('#aiKey').value.trim();
+    const body = {
+      model,
+      limitMessages: parseInt($('#aiLimMsgs').value, 10) || 15,
+      limitWindowHours: parseInt($('#aiLimHours').value, 10) || 6,
+      systemPrompt: $('#aiSys').value,
+    };
+    if (key) body.apiKey = key;
+    try {
+      await post('/api/admin/ai', body);
+      toast('AI configuration saved');
+      renderAI();
+    } catch { toast('Failed to save', true); }
+  });
+  $('#aiClearKey').addEventListener('click', async () => {
+    try {
+      await post('/api/admin/ai', { apiKey: '' });
+      toast('API key removed');
+      renderAI();
+    } catch { toast('Failed', true); }
+  });
+  $('#aiTest').addEventListener('click', async e => {
+    const btn = e.currentTarget;
+    const res = $('#aiTestResult');
+    const model = currentModel();
+    if (model && model !== ai.model) await post('/api/admin/ai', { model }).catch(() => {});
+    btn.disabled = true;
+    res.className = 'ai-test-result';
+    res.textContent = 'Testing…';
+    try {
+      const r = await post('/api/admin/ai-test', {});
+      res.className = 'ai-test-result ' + (r.ok ? 'ok' : 'bad');
+      res.textContent = r.ok ? '✓ ' + r.detail : '✗ ' + r.detail;
+    } catch {
+      res.className = 'ai-test-result bad';
+      res.textContent = '✗ Request failed';
+    } finally { btn.disabled = false; }
+  });
+}
+function bindPwTogglesAI() {
+  $$('.pw-toggle').forEach(b => b.addEventListener('click', () => {
+    const inp = $('#' + b.dataset.target);
+    if (!inp) return;
+    const show = inp.type === 'password';
+    inp.type = show ? 'text' : 'password';
+    b.textContent = show ? 'Hide' : 'Show';
+  }));
 }
 
 /* ---------- overview ---------- */

@@ -28,6 +28,18 @@ function save() {
 function migrate() {
   // shape upgrades for older databases
   if (db && db.status && !Array.isArray(db.status.incidents)) db.status.incidents = [];
+  if (db) {
+    if (!db.ai || typeof db.ai !== 'object') db.ai = {};
+    db.ai = {
+      apiKey: typeof db.ai.apiKey === 'string' ? db.ai.apiKey : '',
+      model: typeof db.ai.model === 'string' && db.ai.model ? db.ai.model : 'llama-3.3-70b-versatile',
+      limitMessages: Number.isFinite(db.ai.limitMessages) ? db.ai.limitMessages : 15,
+      limitWindowHours: Number.isFinite(db.ai.limitWindowHours) ? db.ai.limitWindowHours : 6,
+      systemPrompt: typeof db.ai.systemPrompt === 'string' ? db.ai.systemPrompt : '',
+    };
+    if (!db.chats || typeof db.chats !== 'object') db.chats = {};
+    if (!db.usage || typeof db.usage !== 'object') db.usage = {};
+  }
 }
 
 function hashPw(pw, salt) {
@@ -59,6 +71,9 @@ function seed() {
     resets: {},
     support: [],
     status: { services: seedStatus(), incidents: [], updated: new Date().toISOString() },
+    ai: { apiKey: '', model: 'llama-3.3-70b-versatile', limitMessages: 15, limitWindowHours: 6, systemPrompt: '' },
+    chats: {},
+    usage: {},
     site: {
       maintenance: false,
       blockLogins: false,
@@ -162,6 +177,89 @@ function replyEmail(name, message) {
 
 function escapeHtml(s) {
   return String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+/* ---------------- AI (Groq) ---------------- */
+
+const DEFAULT_SYSTEM_PROMPT = 'You are Turing, a precise, thoughtful AI assistant. Reason carefully, answer directly, and avoid filler. Always reply in the user\'s language. Use Markdown when it helps: headings, lists, and fenced code blocks for code.';
+
+// rolling-window usage: { used, limit, windowHours, remaining, resetsAt }
+function usageFor(u) {
+  const winMs = db.ai.limitWindowHours * 3600 * 1000;
+  const now = Date.now();
+  const arr = (db.usage[u.id] || []).filter(t => t > now - winMs);
+  db.usage[u.id] = arr;
+  const resetsAt = arr.length ? new Date(arr[0] + winMs).toISOString() : null;
+  return {
+    used: arr.length,
+    limit: db.ai.limitMessages,
+    windowHours: db.ai.limitWindowHours,
+    remaining: Math.max(0, db.ai.limitMessages - arr.length),
+    resetsAt,
+  };
+}
+
+// Streams a Groq chat completion back to the client as simple SSE events:
+//   data: {"content":"..."} (repeated) then data: {"done":true}
+// Returns the accumulated assistant text (or '' if nothing arrived).
+async function streamGroq(res, req, model, messages, headersSent = false) {
+  res.on('error', () => {}); // client disconnects must never crash the server
+  if (!headersSent) {
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+  }
+  const ctrl = new AbortController();
+  req.on('close', () => ctrl.abort());
+  let full = '';
+  try {
+    const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${db.ai.apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model, messages, stream: true, temperature: 0.7 }),
+      signal: ctrl.signal,
+    });
+    if (!r.ok) {
+      const t = await r.text().catch(() => '');
+      let reason = 'upstream';
+      try { const j = JSON.parse(t); reason = (j.error && j.error.message) || reason; } catch {}
+      res.write(`data: ${JSON.stringify({ error: 'upstream', status: r.status, detail: String(reason).slice(0, 300) })}\n\n`);
+      res.end();
+      return '';
+    }
+    const dec = new TextDecoder();
+    let buf = '';
+    for await (const chunk of r.body) {
+      if (ctrl.signal.aborted) break;
+      buf += dec.decode(chunk, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, idx).trim();
+        buf = buf.slice(idx + 1);
+        if (!line.startsWith('data:')) continue;
+        const payload = line.slice(5).trim();
+        if (!payload || payload === '[DONE]') continue;
+        try {
+          const j = JSON.parse(payload);
+          const delta = j.choices && j.choices[0] && j.choices[0].delta ? (j.choices[0].delta.content || '') : '';
+          if (delta) { full += delta; res.write(`data: ${JSON.stringify({ content: delta })}\n\n`); }
+        } catch {}
+      }
+    }
+    if (!ctrl.signal.aborted) {
+      res.write(`data: ${JSON.stringify({ done: true })}\n\n`);
+      res.end();
+    }
+    return full;
+  } catch (e) {
+    if (!ctrl.signal.aborted) {
+      try { res.write(`data: ${JSON.stringify({ error: 'network' })}\n\n`); res.end(); } catch {}
+    }
+    return full;
+  }
 }
 
 /* ---------------- helpers ---------------- */
@@ -284,13 +382,134 @@ async function handleApi(req, res, url) {
   if (m === 'GET' && p === '/api/auth/me') {
     const u = requireUser(req);
     if (!u) return json(res, 401, { error: 'unauthorized' });
-    return json(res, 200, { user: { name: u.name, email: u.email, created: u.created } });
+    return json(res, 200, { user: { name: u.name, email: u.email, created: u.created }, onboarded: !!(u.onboard && u.onboard.acceptedTerms) });
   }
   if (m === 'POST' && p === '/api/auth/logout') {
     const s = getSession(req);
     if (s) { delete db.sessions[s.token]; save(); }
     clearSessionCookie(res);
     return json(res, 200, { ok: true });
+  }
+
+  // ---- auth: change password (logged-in user) ----
+  if (m === 'POST' && p === '/api/auth/password') {
+    const u = requireUser(req);
+    if (!u) return json(res, 401, { error: 'unauthorized' });
+    const b = await readBody(req);
+    const current = String(b.current || '');
+    const next = String(b.password || '');
+    if (hashPw(current, u.salt) !== u.passHash) return json(res, 401, { error: 'wrong_password', message: 'Current password is incorrect.' });
+    if (next.length < 8) return json(res, 400, { error: 'invalid', message: 'Password must be at least 8 characters.' });
+    u.salt = newSalt(); u.passHash = hashPw(next, u.salt);
+    logActivity(`Password changed: ${u.name}`);
+    return json(res, 200, { ok: true });
+  }
+
+  // ---- account (profile + usage) ----
+  if (m === 'GET' && p === '/api/account') {
+    const u = requireUser(req);
+    if (!u) return json(res, 401, { error: 'unauthorized' });
+    const usage = usageFor(u);
+    save();
+    return json(res, 200, { user: { name: u.name, email: u.email, created: u.created }, onboard: u.onboard || null, usage });
+  }
+  if (m === 'POST' && p === '/api/account/delete') {
+    const u = requireUser(req);
+    if (!u) return json(res, 401, { error: 'unauthorized' });
+    db.users = db.users.filter(x => x.id !== u.id);
+    delete db.chats[u.id];
+    delete db.usage[u.id];
+    for (const [tok, s] of Object.entries(db.sessions)) if (s.role === 'user' && s.id === u.id) delete db.sessions[tok];
+    logActivity(`Account deleted: ${u.name} <${u.email}>`);
+    save();
+    clearSessionCookie(res);
+    return json(res, 200, { ok: true });
+  }
+
+  // ---- chats ----
+  if (m === 'GET' && p === '/api/chats') {
+    const u = requireUser(req);
+    if (!u) return json(res, 401, { error: 'unauthorized' });
+    const chats = (db.chats[u.id] || []).map(c => ({
+      id: c.id, title: c.title, created: c.created, updated: c.updated,
+      preview: (c.messages.find(x => x.role === 'user') || {}).content || '',
+      count: c.messages.length,
+    }));
+    return json(res, 200, { chats });
+  }
+  if (m === 'POST' && p === '/api/chats') {
+    const u = requireUser(req);
+    if (!u) return json(res, 401, { error: 'unauthorized' });
+    const now = new Date().toISOString();
+    const chat = { id: crypto.randomBytes(6).toString('hex'), title: 'New chat', created: now, updated: now, messages: [] };
+    db.chats[u.id] = db.chats[u.id] || [];
+    db.chats[u.id].unshift(chat);
+    save();
+    return json(res, 201, { chat: { ...chat, messages: [] } });
+  }
+  const chatMatch = p.match(/^\/api\/chats\/([a-z0-9]+)$/);
+  if (chatMatch) {
+    const u = requireUser(req);
+    if (!u) return json(res, 401, { error: 'unauthorized' });
+    const chats = db.chats[u.id] || [];
+    const chat = chats.find(c => c.id === chatMatch[1]);
+    if (!chat) return json(res, 404, { error: 'not_found' });
+    if (m === 'GET') return json(res, 200, { chat });
+    if (m === 'PATCH') {
+      const b = await readBody(req);
+      const title = String(b.title || '').trim().slice(0, 80);
+      if (!title) return json(res, 400, { error: 'invalid' });
+      chat.title = title; chat.updated = new Date().toISOString();
+      save();
+      return json(res, 200, { ok: true, chat });
+    }
+    if (m === 'DELETE') {
+      db.chats[u.id] = chats.filter(c => c.id !== chat.id);
+      save();
+      return json(res, 200, { ok: true });
+    }
+  }
+  // send a message → streamed Groq completion (SSE). Rate limit enforced here.
+  const msgMatch = p.match(/^\/api\/chats\/([a-z0-9]+)\/messages$/);
+  if (m === 'POST' && msgMatch) {
+    const u = requireUser(req);
+    if (!u) return json(res, 401, { error: 'unauthorized' });
+    if (db.site.maintenance) return json(res, 503, { error: 'maintenance', message: 'Turing is under maintenance.' });
+    const chats = db.chats[u.id] || [];
+    const chat = chats.find(c => c.id === msgMatch[1]);
+    if (!chat) return json(res, 404, { error: 'not_found' });
+    const b = await readBody(req);
+    const content = String(b.content || '').trim().slice(0, 6000);
+    if (!content) return json(res, 400, { error: 'invalid', message: 'Message is required.' });
+    if (!db.ai.apiKey) return json(res, 503, { error: 'not_configured', message: 'The AI model has not been configured yet.' });
+    const usage = usageFor(u);
+    if (usage.used >= usage.limit) return json(res, 429, { error: 'rate_limited', resetsAt: usage.resetsAt });
+    // count this message against the rolling window
+    db.usage[u.id].push(Date.now());
+    chat.messages.push({ role: 'user', content, at: new Date().toISOString() });
+    let newTitle = null;
+    if (chat.messages.filter(x => x.role === 'user').length === 1) {
+      chat.title = content.replace(/\s+/g, ' ').slice(0, 48);
+      newTitle = chat.title;
+    }
+    chat.updated = new Date().toISOString();
+    save();
+    const sys = (db.ai.systemPrompt || DEFAULT_SYSTEM_PROMPT).trim();
+    const hist = chat.messages.slice(-24).map(x => ({ role: x.role, content: x.content }));
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    if (newTitle) res.write(`data: ${JSON.stringify({ title: newTitle })}\n\n`);
+    const full = await streamGroq(res, req, db.ai.model, [{ role: 'system', content: sys }, ...hist], true);
+    if (full) {
+      chat.messages.push({ role: 'assistant', content: full, at: new Date().toISOString() });
+      chat.updated = new Date().toISOString();
+      save();
+    }
+    return;
   }
 
   // ---- auth: register ----
@@ -528,6 +747,54 @@ async function handleApi(req, res, url) {
     return json(res, 200, { ok: true, site: s });
   }
 
+  /* ---- AI configuration (Groq) ---- */
+  if (m === 'GET' && p === '/api/admin/ai') {
+    const a = db.ai;
+    const masked = a.apiKey ? a.apiKey.slice(0, 7) + '…' + a.apiKey.slice(-4) : '';
+    return json(res, 200, { ai: { model: a.model, hasKey: !!a.apiKey, keyMasked: masked, limitMessages: a.limitMessages, limitWindowHours: a.limitWindowHours, systemPrompt: a.systemPrompt } });
+  }
+  if (m === 'POST' && p === '/api/admin/ai') {
+    const b = await readBody(req);
+    const a = db.ai;
+    if (typeof b.model === 'string' && b.model.trim()) a.model = b.model.trim().slice(0, 120);
+    if (typeof b.apiKey === 'string') {
+      const k = b.apiKey.trim();
+      if (k && !k.includes('…') && !/^\*+$/.test(k)) a.apiKey = k.slice(0, 200);
+      if (b.apiKey === '') a.apiKey = '';
+    }
+    const lm = parseInt(b.limitMessages, 10);
+    const lw = parseInt(b.limitWindowHours, 10);
+    if (Number.isFinite(lm)) a.limitMessages = Math.max(1, Math.min(500, lm));
+    if (Number.isFinite(lw)) a.limitWindowHours = Math.max(1, Math.min(72, lw));
+    if (typeof b.systemPrompt === 'string') a.systemPrompt = b.systemPrompt.trim().slice(0, 1200);
+    logActivity(`AI config saved — model ${a.model}${a.apiKey ? ' · key set' : ' · no key'}`);
+    save();
+    return json(res, 200, { ok: true, ai: { model: a.model, hasKey: !!a.apiKey, limitMessages: a.limitMessages, limitWindowHours: a.limitWindowHours } });
+  }
+  if (m === 'POST' && p === '/api/admin/ai-test') {
+    const a = db.ai;
+    if (!a.apiKey) return json(res, 400, { ok: false, detail: 'No API key saved yet.' });
+    const t0 = Date.now();
+    try {
+      const r = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${a.apiKey}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: a.model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 4, stream: false }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const detail = (j.error && j.error.message) || `HTTP ${r.status}`;
+        logActivity(`AI test failed — ${String(detail).slice(0, 80)}`);
+        return json(res, 200, { ok: false, detail: String(detail).slice(0, 300) });
+      }
+      const ms = Date.now() - t0;
+      logActivity(`AI test OK — ${a.model} (${ms}ms)`);
+      return json(res, 200, { ok: true, detail: `${a.model} responded in ${ms}ms` });
+    } catch (e) {
+      return json(res, 200, { ok: false, detail: 'Network error reaching api.groq.com' });
+    }
+  }
+
   return json(res, 404, { error: 'not_found' });
 }
 
@@ -543,8 +810,10 @@ const server = http.createServer(async (req, res) => {
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); return res.end(); }
 
     if (p === '/admin1042024' || p === '/admin1042024/') {
-      return serveFile(req, res, path.join(PUBLIC_DIR, "admin.html"));
+      return serveFile(req, res, path.join(PUBLIC_DIR, 'admin.html'));
     }
+    if (p === '/ia' || p === '/ia/') return serveFile(req, res, path.join(PUBLIC_DIR, 'ia.html'));
+    if (p === '/account' || p === '/account/') return serveFile(req, res, path.join(PUBLIC_DIR, 'account.html'));
 
     // static files
     const clean = path.normalize(p).replace(/^([.][.][/\\])+/, '');
