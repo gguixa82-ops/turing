@@ -1,4 +1,4 @@
-/* ============ Turing — SPA ============ */
+/* ============ Turing — SPA (i18n, 11 languages) ============ */
 'use strict';
 
 const $ = (s, r = document) => r.querySelector(s);
@@ -6,7 +6,22 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const el = s => $(s);
 const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-const state = { site: null, user: null, route: null, researchShown: 0, docsNav: null, researchList: null };
+const state = { site: null, user: null, route: null, researchShown: 0, docsNav: null, researchList: null, lang: TURING_I18N.detectLang() };
+document.documentElement.lang = state.lang;
+
+/* ---------- i18n helpers ---------- */
+function T(key, vars) { return TURING_I18N.t(state.lang, key, vars); }
+function Tdict() { return TURING_I18N.dictFor(state.lang); }
+function locale() { return state.lang === 'en' ? 'en-US' : state.lang; }
+const slugKey = slug => String(slug).replace(/-/g, '_');
+const CAT_KEYS = { 'Context': 'cat_context', 'Design': 'cat_design', 'Memory': 'cat_memory', 'Performance': 'cat_performance', 'Evaluation': 'cat_evaluation', 'Safety': 'cat_safety', 'Output': 'cat_output', 'Systems': 'cat_systems' };
+const SEC_KEYS = { 'Getting started': 'sec_getting', 'Core concepts': 'sec_core', 'Guides': 'sec_guides', 'Platform': 'sec_platform' };
+function catName(cat) { const k = CAT_KEYS[cat]; return k ? T(k) : cat; }
+function secName(sec) { const k = SEC_KEYS[sec]; return k ? T(k) : sec; }
+function postTitle(p) { return Tdict()['rp_' + slugKey(p.slug) + '_t'] || p.title; }
+function postExcerpt(p) { return Tdict()['rp_' + slugKey(p.slug) + '_e'] || p.excerpt; }
+function docTitle(slug) { return Tdict()['doc_' + slugKey(slug) + '_t'] || slug; }
+function svcLabel(s, suffix) { const v = Tdict()['svc_' + s.id + (suffix || '')]; return v || (suffix ? s.description : s.name); }
 
 /* ---------- utils ---------- */
 function esc(s) {
@@ -18,17 +33,81 @@ async function fetchJSON(url, opts) {
   if (!r.ok) throw Object.assign(new Error(j.message || 'request failed'), { status: r.status, data: j });
   return j;
 }
-function fmtDate(dmy) { // '14/09/2026' → 'Sep 14, 2026'
+function fmtDate(dmy) { // '14/09/2026' → localized 'Sep 14, 2026'
   const [d, m, y] = String(dmy).split('/').map(Number);
-  return new Date(y, m - 1, d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  try { return new Date(y, m - 1, d).toLocaleDateString(locale(), { month: 'short', day: 'numeric', year: 'numeric' }); }
+  catch { return `${d}/${m}/${y}`; }
+}
+function fmtDay(ts) {
+  try { return new Date(ts).toLocaleDateString(locale(), { month: 'short', day: 'numeric' }); }
+  catch { return ''; }
 }
 function timeAgo(iso) {
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000);
-  if (s < 60) return 'just now';
-  if (s < 3600) return `${Math.floor(s / 60)} min ago`;
-  if (s < 86400) return `${Math.floor(s / 3600)} h ago`;
-  return `${Math.floor(s / 86400)} d ago`;
+  if (s < 60) return T('justNow');
+  if (s < 3600) return T('minAgo', { n: Math.floor(s / 60) });
+  if (s < 86400) return T('hAgo', { n: Math.floor(s / 3600) });
+  return T('dAgo', { n: Math.floor(s / 86400) });
 }
+function legalDate() {
+  try { return new Date(2026, 8, 14).toLocaleDateString(locale(), { year: 'numeric', month: 'long', day: 'numeric' }); }
+  catch { return '14/09/2026'; }
+}
+function apiError(e2, map) {
+  const code = e2 && e2.data ? e2.data.error : null;
+  if (code && map[code]) return T(map[code]);
+  return T('somethingWrong');
+}
+
+/* ---------- language switching ---------- */
+function closeLangMenu() {
+  const m = $('#langMenu'); if (m) m.hidden = true;
+  const b = $('#langBtn'); if (b) b.setAttribute('aria-expanded', 'false');
+}
+function toggleLangMenu() {
+  const m = $('#langMenu'); const b = $('#langBtn');
+  if (!m || !b) return;
+  m.hidden = !m.hidden;
+  b.setAttribute('aria-expanded', String(!m.hidden));
+}
+function setLang(code) {
+  if (!TURING_I18N.SUPPORTED.includes(code)) code = 'en';
+  if (code === state.lang) { closeLangMenu(); return; }
+  state.lang = code;
+  try { localStorage.setItem('turing_lang', code); } catch {}
+  document.documentElement.lang = code;
+  closeMobileMenu();
+  if (mobileMenu) { mobileMenu.remove(); mobileMenu = null; }
+  withTransition(() => renderRoute(location.pathname, { instant: true }));
+}
+document.addEventListener('click', e => {
+  const sw = $('#langSwitch');
+  if (sw && !sw.contains(e.target)) closeLangMenu();
+  if (mobileMenu && !e.target.closest('.mobile-menu') && !e.target.closest('#menuBtn') && !e.target.closest('#langSwitch')) closeLangMenu();
+});
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeLangMenu(); });
+
+const GLOBE_SVG = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M3.6 9h16.8M3.6 15h16.8"/><path d="M12 3a15 15 0 0 1 0 18M12 3a15 15 0 0 0 0 18"/></svg>';
+
+function langSwitchHtml() {
+  const cur = TURING_I18N.LANGS.find(l => l.code === state.lang) || TURING_I18N.LANGS[0];
+  const items = TURING_I18N.LANGS.map(l =>
+    `<button class="lang-item${l.code === state.lang ? ' sel' : ''}" data-lang="${l.code}"><span>${esc(l.native)}</span>${l.code === state.lang ? '<span class="lk">✓</span>' : ''}</button>`).join('');
+  return `
+    <div class="lang" id="langSwitch">
+      <button class="lang-btn" id="langBtn" aria-label="${esc(T('language'))}" aria-expanded="false">${GLOBE_SVG}<span class="lang-cur">${esc(cur.code.toUpperCase())}</span></button>
+      <div class="lang-menu" id="langMenu" hidden>${items}</div>
+    </div>`;
+}
+function wireLangSwitch(scope = document) {
+  const btn = $('#langBtn');
+  if (btn) btn.addEventListener('click', e => { e.stopPropagation(); toggleLangMenu(); });
+  $$('.lang-item', scope).forEach(b => b.addEventListener('click', e => {
+    e.stopPropagation();
+    setLang(b.dataset.lang);
+  }));
+}
+
 /* ---------- transition overlay ---------- */
 let transitioning = false;
 function withTransition(fn) {
@@ -49,28 +128,28 @@ function withTransition(fn) {
 
 /* ---------- router ---------- */
 const ROUTES = [
-  { re: /^\/$/, view: 'home', title: 'Turing — Serious questions, serious answers' },
-  { re: /^\/research$/, view: 'research', title: 'Research — Turing' },
-  { re: /^\/research\/([a-z0-9-]+)$/, view: 'researchPost', param: 1, title: 'Research — Turing' },
-  { re: /^\/docs$/, view: 'docs', param: 'introduction', title: 'Docs — Turing' },
-  { re: /^\/docs\/([a-z0-9-]+)$/, view: 'docs', param: 1, title: 'Docs — Turing' },
-  { re: /^\/pricing$/, view: 'pricing', title: 'Pricing — Turing' },
-  { re: /^\/status$/, view: 'status', title: 'Status — Turing' },
-  { re: /^\/support$/, view: 'support', title: 'Support — Turing' },
-  { re: /^\/onboard$/, view: 'onboard', title: 'Welcome — Turing' },
-  { re: /^\/login$/, view: 'login', title: 'Sign in — Turing' },
-  { re: /^\/register$/, view: 'register', title: 'Create account — Turing' },
-  { re: /^\/reset$/, view: 'reset', title: 'Reset password — Turing' },
-  { re: /^\/recovery$/, view: 'recovery', title: 'New password — Turing' },
-  { re: /^\/privacy$/, view: 'privacy', title: 'Privacy — Turing' },
-  { re: /^\/terms$/, view: 'terms', title: 'Terms — Turing' },
+  { re: /^\/$/, view: 'home', titleKey: 'titleHome' },
+  { re: /^\/research$/, view: 'research', titleKey: 'titleResearch' },
+  { re: /^\/research\/([a-z0-9-]+)$/, view: 'researchPost', param: 1, titleKey: 'titleResearch' },
+  { re: /^\/docs$/, view: 'docs', param: 'introduction', titleKey: 'titleDocs' },
+  { re: /^\/docs\/([a-z0-9-]+)$/, view: 'docs', param: 1, titleKey: 'titleDocs' },
+  { re: /^\/pricing$/, view: 'pricing', titleKey: 'titlePricing' },
+  { re: /^\/status$/, view: 'status', titleKey: 'titleStatus' },
+  { re: /^\/support$/, view: 'support', titleKey: 'titleSupport' },
+  { re: /^\/onboard$/, view: 'onboard', titleKey: 'titleOnboard' },
+  { re: /^\/login$/, view: 'login', titleKey: 'titleLogin' },
+  { re: /^\/register$/, view: 'register', titleKey: 'titleRegister' },
+  { re: /^\/reset$/, view: 'reset', titleKey: 'titleReset' },
+  { re: /^\/recovery$/, view: 'recovery', titleKey: 'titleRecovery' },
+  { re: /^\/privacy$/, view: 'privacy', titleKey: 'titlePrivacy' },
+  { re: /^\/terms$/, view: 'terms', titleKey: 'titleTerms' },
 ];
 function matchRoute(path) {
   for (const r of ROUTES) {
     const m = path.match(r.re);
     if (m) return { ...r, param: typeof r.param === 'number' ? m[r.param] : r.param };
   }
-  return { view: 'notFound', title: '404 — Turing' };
+  return { view: 'notFound', titleKey: 'title404' };
 }
 
 function go(path) {
@@ -91,11 +170,11 @@ window.addEventListener('popstate', () => renderRoute(location.pathname, { insta
 
 /* ---------- chrome: header / footer / announce ---------- */
 const NAV = [
-  { href: '/research', label: 'Research' },
-  { href: '/docs', label: 'Docs' },
-  { href: '/pricing', label: 'Pricing' },
-  { href: '/status', label: 'Status' },
-  { href: '/support', label: 'Support' },
+  { href: '/research', key: 'navResearch' },
+  { href: '/docs', key: 'navDocs' },
+  { href: '/pricing', key: 'navPricing' },
+  { href: '/status', key: 'navStatus' },
+  { href: '/support', key: 'navSupport' },
 ];
 
 function renderHeader() {
@@ -107,19 +186,21 @@ function renderHeader() {
     <span class="user-chip">
       <span class="avatar">${esc(state.user.name.trim().charAt(0).toUpperCase())}</span>
       <span class="uname">${esc(state.user.name)}</span>
-      <button class="uout" data-act="logout" title="Sign out">Sign out</button>
+      <button class="uout" data-act="logout" title="${esc(T('signOut'))}">${esc(T('signOut'))}</button>
     </span>` : '';
   h.innerHTML = `
     <a class="wordmark" href="/">Turing</a>
     <div style="display:flex;align-items:center;gap:6px">
       <nav class="nav">
-        ${NAV.map(n => `<a href="${n.href}" class="${active === n.href || (active.startsWith('/docs') && n.href === '/docs') ? 'active' : ''}">${n.label}</a>`).join('')}
+        ${NAV.map(n => `<a href="${n.href}" class="${active === n.href || (active.startsWith('/docs') && n.href === '/docs') ? 'active' : ''}">${esc(T(n.key))}</a>`).join('')}
         ${chip}
       </nav>
-      <button class="menu-btn" id="menuBtn" aria-label="Menu"><span></span><span></span></button>
+      ${langSwitchHtml()}
+      <button class="menu-btn" id="menuBtn" aria-label="${esc(T('menu'))}"><span></span><span></span></button>
     </div>`;
   const mb = $('#menuBtn');
   if (mb) mb.addEventListener('click', toggleMobileMenu);
+  wireLangSwitch(h);
   h.querySelector('[data-act="logout"]')?.addEventListener('click', async e => {
     e.preventDefault();
     try { await fetchJSON('/api/auth/logout', { method: 'POST' }); } catch {}
@@ -135,10 +216,17 @@ function toggleMobileMenu(force) {
     mobileMenu.className = 'mobile-menu';
     mobileMenu.innerHTML = `
       <div>
-        ${NAV.map((n, i) => `<a href="${n.href}" style="transition-delay:${0.05 + i * 0.05}s">${n.label}</a>`).join('')}
-        <div class="mm-legal"><a href="/privacy">Privacy</a><a href="/terms">Terms</a></div>
+        ${NAV.map((n, i) => `<a href="${n.href}" style="transition-delay:${0.05 + i * 0.05}s">${esc(T(n.key))}</a>`).join('')}
+        <div class="mm-lang">
+          <div class="mm-lang-t">${esc(T('language'))}</div>
+          <div class="mm-lang-grid">
+            ${TURING_I18N.LANGS.map(l => `<button class="mm-lang-item${l.code === state.lang ? ' sel' : ''}" data-lang="${l.code}">${esc(l.native)}</button>`).join('')}
+          </div>
+        </div>
+        <div class="mm-legal"><a href="/privacy">${esc(T('privacy'))}</a><a href="/terms">${esc(T('terms'))}</a></div>
       </div>`;
     document.body.appendChild(mobileMenu);
+    $$('.mm-lang-item', mobileMenu).forEach(b => b.addEventListener('click', () => setLang(b.dataset.lang)));
   }
   const btn = $('#menuBtn');
   const open = force !== undefined ? force : !mobileMenu.classList.contains('open');
@@ -157,11 +245,11 @@ function renderFooter() {
     <div class="f-in">
       <span class="f-brand">Turing</span>
       <nav class="f-nav">
-        ${NAV.map(n => `<a href="${n.href}">${n.label}</a>`).join('')}
-        <a href="/privacy">Privacy</a>
-        <a href="/terms">Terms</a>
+        ${NAV.map(n => `<a href="${n.href}">${esc(T(n.key))}</a>`).join('')}
+        <a href="/privacy">${esc(T('privacy'))}</a>
+        <a href="/terms">${esc(T('terms'))}</a>
       </nav>
-      <span class="f-copy">© 2026 Turing. All rights reserved.</span>
+      <span class="f-copy">${esc(T('rights'))}</span>
     </div>`;
 }
 
@@ -171,7 +259,7 @@ function renderAnnounce() {
   if (!ann || !ann.enabled || !ann.text) { a.hidden = true; a.innerHTML = ''; return; }
   if (sessionStorage.getItem('turing_announce_dismissed')) { a.hidden = true; return; }
   a.hidden = false;
-  a.innerHTML = `<span class="dot"></span><span>${esc(ann.text)}</span><button class="a-close" aria-label="Dismiss">×</button>`;
+  a.innerHTML = `<span class="dot"></span><span>${esc(ann.text)}</span><button class="a-close" aria-label="${esc(T('dismiss'))}">×</button>`;
   a.querySelector('.a-close').addEventListener('click', () => {
     a.hidden = true;
     sessionStorage.setItem('turing_announce_dismissed', '1');
@@ -180,34 +268,27 @@ function renderAnnounce() {
 
 /* ---------- views ---------- */
 
-const HOME_FAQS = [
-  { q: 'What exactly is Turing?', a: 'A conversational AI built for precise reasoning. It works through your question step by step, leads with the answer, and shows the support only when it earns its place. No filler, no hedging.' },
-  { q: 'How much does it cost?', a: 'The Free plan is live today and free forever — unlimited conversations, core reasoning, conversation memory, email support. The other plans are in development and will go live on the pricing page when they are ready.' },
-  { q: 'What does the memory actually do?', a: 'Facts you state stay in the conversation, attributed to you and never invented. If it does not remember something, it says so. Nothing is carried across without you.' },
-  { q: 'How is my data handled?', a: 'Your name, email and conversations exist to run the service. No selling, no ads, no tracking. You can ask to see, correct or delete everything at any time from the support page — a person reads it.' },
-  { q: 'Can it be wrong?', a: 'Yes — any system that reasons can be wrong. Turing labels its guesses, says "I don\'t know" when it should, and states its confidence when it can. Verify anything with real stakes: medical, legal, financial, safety-critical.' },
-  { q: 'Is there an API yet?', a: 'Not yet — no keys, no endpoints. When it ships, the full reference lands in the docs. Leave a note on the support page with "API access" as the topic and you will be told the day it opens.' },
-];
+const HOME_FAQ_KEYS = ['hq1', 'hq2', 'hq3', 'hq4', 'hq5', 'hq6'];
 
 function viewHome() {
-  const words = ['Serious', 'questions,', 'serious', 'answers.'];
-  const wHtml = words.map((w, i) => `<span class="w"><span class="wi" style="--d:${(0.28 + i * 0.09).toFixed(2)}s">${w}</span></span>`).join(' ');
+  const words = T('heroWords');
+  const wHtml = words.map((w, i) => `<span class="w"><span class="wi" style="--d:${(0.28 + i * 0.09).toFixed(2)}s">${esc(w)}</span></span>`).join(' ');
   return `
   <section class="home">
     <div class="hero">
       <div class="hero-text">
-        <h1 aria-label="Serious questions, serious answers.">${wHtml}</h1>
-        <p class="hero-sub rv" style="--d:.86s">Precise reasoning. Real memory. Zero filler.</p>
+        <h1 aria-label="${esc(T('heroAria'))}">${wHtml}</h1>
+        <p class="hero-sub rv" style="--d:.86s">${esc(T('heroSub'))}</p>
         <div class="hero-cta rv" style="--d:1s">
-          <a class="btn btn-primary" href="/register">Start for free <span class="arr">→</span></a>
-          <a class="link-arrow" href="/docs">See how it works <span>→</span></a>
+          <a class="btn btn-primary" href="/register">${esc(T('startFree'))} <span class="arr">→</span></a>
+          <a class="link-arrow" href="/docs">${esc(T('seeHow'))} <span>→</span></a>
         </div>
       </div>
       <div class="hero-visual">
         <div class="video-frame">
           <div class="frame-glow"></div>
           <svg class="frame-draw" viewBox="0 0 100 100" preserveAspectRatio="none" aria-hidden="true"><rect x="0.5" y="0.5" width="99" height="99" rx="2.2" pathLength="1"></rect></svg>
-          <video src="https://cdn.oreateai.com/aivideo/videodownload/1818640512.mp4" autoplay loop muted playsinline preload="auto" aria-label="Turing in action"></video>
+          <video src="https://cdn.oreateai.com/aivideo/videodownload/1818640512.mp4" autoplay loop muted playsinline preload="auto" aria-label="${esc(T('videoAria'))}"></video>
         </div>
         <div class="home-corner">© 2026 Turing</div>
       </div>
@@ -215,15 +296,15 @@ function viewHome() {
     <section class="home-faq" id="faq">
       <div class="wrap">
         <div class="home-faq-head">
-          <span class="eyebrow rv-fade"><span class="tick"></span>FAQ</span>
-          <h2 class="rv" style="--d:.08s">Frequently asked questions</h2>
-          <p class="home-faq-sub rv" style="--d:.16s">The short version of everything. For the rest, the support page has a person on the other side.</p>
+          <span class="eyebrow rv-fade"><span class="tick"></span>${esc(T('faqEyebrow'))}</span>
+          <h2 class="rv" style="--d:.08s">${esc(T('faqTitle'))}</h2>
+          <p class="home-faq-sub rv" style="--d:.16s">${esc(T('faqSub'))}</p>
         </div>
         <div class="faq home-faq-list">
-          ${HOME_FAQS.map((f, i) => `
+          ${HOME_FAQ_KEYS.map((k, i) => `
           <div class="faq-item rv" style="--d:${(0.22 + i * 0.07).toFixed(2)}s">
-            <button class="faq-q" data-faq="${i}">${f.q}<span class="ic"></span></button>
-            <div class="faq-a"><div><p>${f.a}</p></div></div>
+            <button class="faq-q" data-faq="${i}">${esc(T(k))}<span class="ic"></span></button>
+            <div class="faq-a"><div><p>${esc(T('ha' + k.slice(2)))}</p></div></div>
           </div>`).join('')}
         </div>
       </div>
@@ -237,9 +318,9 @@ function viewResearch() {
   return `
   <div class="wrap">
     <div class="page-head">
-      <span class="eyebrow rv-fade"><span class="tick"></span>Research</span>
-      <h1 class="rv" style="--d:.08s">Notes from the core team</h1>
-      <p class="sub rv" style="--d:.16s">How Turing is built — context, memory, latency, and the unglamorous parts that make a thinking partner feel alive.</p>
+      <span class="eyebrow rv-fade"><span class="tick"></span>${esc(T('navResearch'))}</span>
+      <h1 class="rv" style="--d:.08s">${esc(T('researchHead'))}</h1>
+      <p class="sub rv" style="--d:.16s">${esc(T('researchSub'))}</p>
     </div>
     <div class="research-grid" id="researchGrid"></div>
     <div class="load-more-row" id="loadMoreRow"></div>
@@ -249,10 +330,10 @@ function viewResearch() {
 function postCard(p, i, baseDelay = 0) {
   return `
   <a class="post-card rv" style="--d:${(baseDelay + i * 0.09).toFixed(2)}s" href="/research/${p.slug}">
-    <div class="pc-top"><span class="chip">${esc(p.category)}</span><span class="pc-date">${fmtDate(p.date)}</span></div>
-    <h3>${esc(p.title)}</h3>
-    <p>${esc(p.excerpt)}</p>
-    <div class="pc-foot"><span>${p.readMin} min read</span><span class="pc-go">Read <span>→</span></span></div>
+    <div class="pc-top"><span class="chip">${esc(catName(p.category))}</span><span class="pc-date">${fmtDate(p.date)}</span></div>
+    <h3>${esc(postTitle(p))}</h3>
+    <p>${esc(postExcerpt(p))}</p>
+    <div class="pc-foot"><span>${esc(T('minRead', { n: p.readMin }))}</span><span class="pc-go">${esc(T('read'))} <span>→</span></span></div>
   </a>`;
 }
 
@@ -266,9 +347,9 @@ async function fillResearch(append) {
   state.researchShown += slice.length;
   const row = el('#loadMoreRow');
   if (state.researchShown >= state.researchList.length) {
-    row.innerHTML = `<span class="rv-fade" style="font-size:13.5px;color:var(--text-3)">You're all caught up. That's everything for now.</span>`;
+    row.innerHTML = `<span class="rv-fade" style="font-size:13.5px;color:var(--text-3)">${esc(T('caughtUp'))}</span>`;
   } else {
-    row.innerHTML = `<button class="btn-loadmore rv-fade" id="loadMore">Load more research <span class="chev">↓</span></button>`;
+    row.innerHTML = `<button class="btn-loadmore rv-fade" id="loadMore">${esc(T('loadMore'))} <span class="chev">↓</span></button>`;
     $('#loadMore').addEventListener('click', loadMoreResearch);
   }
 }
@@ -297,16 +378,17 @@ async function viewResearchPost(slug) {
     if (b.t === 'quote') return `<blockquote style="--d:${d}s">${esc(b.x)}</blockquote>`;
     return `<p style="--d:${d}s">${esc(b.x)}</p>`;
   }).join('');
-  document.title = `${post.title} — Research — Turing`;
+  document.title = T('titlePost', { t: postTitle(post) });
   return `
   <article class="article">
-    <a class="back rv-fade" href="/research"><span>←</span> Research</a>
-    <div class="a-meta rv" style="--d:.08s"><span class="chip">${esc(post.category)}</span><span class="m">${fmtDate(post.date)}</span><span class="m">·</span><span class="m">${post.readMin} min read</span></div>
-    <h1 class="rv" style="--d:.14s">${esc(post.title)}</h1>
+    <a class="back rv-fade" href="/research"><span>←</span> ${esc(T('navResearch'))}</a>
+    <div class="a-meta rv" style="--d:.08s"><span class="chip">${esc(catName(post.category))}</span><span class="m">${fmtDate(post.date)}</span><span class="m">·</span><span class="m">${esc(T('minRead', { n: post.readMin }))}</span></div>
+    <h1 class="rv" style="--d:.14s">${esc(postTitle(post))}</h1>
+    ${state.lang !== 'en' ? `<div class="content-note rv" style="--d:.16s">${esc(T('contentNote'))}</div>` : ''}
     <div class="body">${body}</div>
     <div class="a-nav">
-      ${prev ? `<a href="/research/${prev.slug}"><div class="lbl">← Previous</div><div class="ttl">${esc(prev.title)}</div></a>` : '<a class="empty"></a>'}
-      ${next ? `<a class="next" href="/research/${next.slug}"><div class="lbl">Next →</div><div class="ttl">${esc(next.title)}</div></a>` : '<a class="empty"></a>'}
+      ${prev ? `<a href="/research/${prev.slug}"><div class="lbl">← ${esc(T('prevPost'))}</div><div class="ttl">${esc(postTitle(prev))}</div></a>` : '<a class="empty"></a>'}
+      ${next ? `<a class="next" href="/research/${next.slug}"><div class="lbl">${esc(T('nextPost'))} →</div><div class="ttl">${esc(postTitle(next))}</div></a>` : '<a class="empty"></a>'}
     </div>
   </article>`;
 }
@@ -316,33 +398,34 @@ async function viewDocs(slug) {
   let doc;
   try { doc = await fetchJSON(`/api/docs/${slug}`); }
   catch { state.route = null; return viewNotFound(); }
-  document.title = `${doc.title} — Docs — Turing`;
+  document.title = T('titleDoc', { t: docTitle(doc.slug || slug) });
   const sections = [...new Set(state.docsNav.map(d => d.section))];
   const side = sections.map(sec => `
-    <div class="ds-sec">${esc(sec)}</div>
+    <div class="ds-sec">${esc(secName(sec))}</div>
     ${state.docsNav.filter(d => d.section === sec).map(d => `
-      <a href="/docs/${d.slug}" class="${d.slug === doc.slug ? 'active' : ''}">${esc(d.title)}${d.comingSoon ? '<span class="soon">Soon</span>' : ''}</a>`).join('')}
+      <a href="/docs/${d.slug}" class="${d.slug === doc.slug ? 'active' : ''}">${esc(docTitle(d.slug))}${d.comingSoon ? `<span class="soon">${esc(T('soon'))}</span>` : ''}</a>`).join('')}
   `).join('');
   const idx = state.docsNav.findIndex(d => d.slug === doc.slug);
   const prev = idx > 0 ? state.docsNav[idx - 1] : null;
   const next = idx >= 0 && idx < state.docsNav.length - 1 ? state.docsNav[idx + 1] : null;
   const comingHero = doc.comingSoon ? `
     <div class="coming-hero rv" style="--d:.1s">
-      <span class="badge-coming"><span class="dot"></span>Coming soon</span>
-      <h2>The API is on its way</h2>
-      <p class="ch-sub">No keys, no endpoints, no reference — yet. When it ships, the full documentation lands here first.</p>
+      <span class="badge-coming"><span class="dot"></span>${esc(T('comingSoon'))}</span>
+      <h2>${esc(T('apiWayT'))}</h2>
+      <p class="ch-sub">${esc(T('apiWayB'))}</p>
     </div>` : '';
   return `
   <div class="docs">
     <aside class="docs-side rv-fade" style="--d:.06s">${side}</aside>
     <div class="docs-main">
-      <div class="d-crumb rv-fade" style="--d:.1s">Docs / ${esc(doc.section)}</div>
-      <h1 class="rv" style="--d:.14s">${esc(doc.title)}</h1>
+      <div class="d-crumb rv-fade" style="--d:.1s">${esc(T('docsCrumb'))} / ${esc(secName(doc.section))}</div>
+      <h1 class="rv" style="--d:.14s">${esc(docTitle(doc.slug || slug))}</h1>
+      ${state.lang !== 'en' ? `<div class="content-note rv" style="--d:.16s">${esc(T('contentNote'))}</div>` : ''}
       ${comingHero}
       <div class="body">${docBodyHtml(doc.body)}</div>
       <div class="d-links">
-        ${prev ? `<a href="/docs/${prev.slug}">← ${esc(prev.title)}</a>` : '<span></span>'}
-        ${next ? `<a href="/docs/${next.slug}">${esc(next.title)} →</a>` : '<span></span>'}
+        ${prev ? `<a href="/docs/${prev.slug}">← ${esc(docTitle(prev.slug))}</a>` : '<span></span>'}
+        ${next ? `<a href="/docs/${next.slug}">${esc(docTitle(next.slug))} →</a>` : '<span></span>'}
       </div>
     </div>
   </div>`;
@@ -369,51 +452,49 @@ function docBodyHtml(blocks) {
 }
 
 /* pricing */
-const PLANS = [
-  { name: 'Free', badge: 'now', badgeLabel: 'Available now', desc: 'The full conversation experience. No strings, no trial clock.', price: '$0', per: 'free forever', feats: ['Unlimited conversations', 'Core reasoning', 'Conversation memory', 'Email support'], cta: 'Start for free', href: '/register', featured: true },
-  { name: 'Maker', badge: 'soon', badgeLabel: 'Coming soon', desc: 'For people building alongside Turing every day.', tbd: true, feats: ['Everything in Free', 'Longer context window', 'Faster responses', 'Priority queue'], cta: 'Coming soon' },
-  { name: 'Expert', badge: 'soon', badgeLabel: 'Coming soon', desc: 'For deep, long-running work and heavy daily use.', tbd: true, feats: ['Everything in Maker', 'Deep research threads', 'Custom workflows', 'Early access features'], cta: 'Coming soon' },
-  { name: 'Core', badge: 'soon', badgeLabel: 'Coming soon', desc: 'For teams that think together, in one place.', tbd: true, feats: ['Everything in Expert', 'Shared workspaces', 'Team memory', 'Admin controls'], cta: 'Coming soon' },
-  { name: 'Enterprise', badge: 'soon', badgeLabel: 'Coming soon', desc: 'For organizations with serious requirements.', tbd: true, feats: ['Everything in Core', 'SSO and security review', 'Dedicated support', 'Custom terms'], cta: 'Coming soon' },
-];
-const FAQS = [
-  { q: 'When do the other plans launch?', a: 'Maker, Expert, Core and Enterprise are in development. When a plan is ready, its card here turns live first — and we keep the Free plan exactly as it is today. There is no "launch surprise" that changes what Free includes.' },
-  { q: 'Does the Free plan expire?', a: 'No. Free is not a trial. It has no date, no usage cliff, and no upgrade nags. If a future paid feature becomes part of the core experience, it will stay available on Free — that is the point of the plan.' },
-  { q: 'What happens to my conversations when a plan launches?', a: 'Nothing. Your conversations and memory stay with you. Plan changes affect what is available, not what you already have. You choose when and if to move.' },
-  { q: 'How do I get access to the API?', a: 'There is no public API yet — no keys, no endpoints. When it ships, the docs page for API access is where the full reference lands. Leave a note on the support page with "API access" as the topic and a person will tell you the day it opens.' },
-];
+function plans() {
+  return [
+    { name: 'Free', badge: 'now', badgeLabel: T('badgeNow'), desc: T('planFreeDesc'), price: '$0', per: T('freeForever'), feats: [T('freeF1'), T('freeF2'), T('freeF3'), T('freeF4')], cta: T('startFree'), href: '/register', featured: true },
+    { name: 'Maker', badge: 'soon', badgeLabel: T('badgeSoon'), desc: T('planMakerDesc'), tbd: true, feats: [T('makerF1'), T('makerF2'), T('makerF3'), T('makerF4')], cta: T('comingSoon') },
+    { name: 'Expert', badge: 'soon', badgeLabel: T('badgeSoon'), desc: T('planExpertDesc'), tbd: true, feats: [T('expertF1'), T('expertF2'), T('expertF3'), T('expertF4')], cta: T('comingSoon') },
+    { name: 'Core', badge: 'soon', badgeLabel: T('badgeSoon'), desc: T('planCoreDesc'), tbd: true, feats: [T('coreF1'), T('coreF2'), T('coreF3'), T('coreF4')], cta: T('comingSoon') },
+    { name: 'Enterprise', badge: 'soon', badgeLabel: T('badgeSoon'), desc: T('planEntDesc'), tbd: true, feats: [T('entF1'), T('entF2'), T('entF3'), T('entF4')], cta: T('comingSoon') },
+  ];
+}
+const PRICING_FAQ_KEYS = ['pq1', 'pq2', 'pq3', 'pq4'];
 
 function viewPricing() {
+  const PLANS = plans();
   return `
   <div class="pricing">
     <div class="pricing-bg" aria-hidden="true"><div class="orb orb1"></div><div class="orb orb2"></div></div>
     <div class="wrap">
       <div class="page-head" style="text-align:center">
-        <span class="eyebrow rv-fade" style="justify-content:center"><span class="tick"></span>Pricing</span>
-        <h1 class="rv" style="--d:.08s">Start free. Stay sharp.</h1>
-        <p class="sub rv" style="--d:.16s;margin:0 auto">One plan is live today. The rest are being built — and when they land, this page is where you will see it first.</p>
+        <span class="eyebrow rv-fade" style="justify-content:center"><span class="tick"></span>${esc(T('navPricing'))}</span>
+        <h1 class="rv" style="--d:.08s">${esc(T('pricingHead'))}</h1>
+        <p class="sub rv" style="--d:.16s;margin:0 auto">${esc(T('pricingSub'))}</p>
       </div>
       <div class="pricing-grid">
         ${PLANS.map((p, i) => `
         <div class="plan ${p.featured ? 'featured' : ''}" style="--i:${i}">
-          <span class="p-badge ${p.badge === 'now' ? 'now' : 'soon'}"><span class="dot"></span>${p.badgeLabel}</span>
-          <h3>${p.name}</h3>
-          <p class="p-desc">${p.desc}</p>
-          <div class="p-price">${p.price ? `<span class="amt">${p.price}</span><span class="per">${p.per}</span>` : '<span class="tbd">Price at launch</span>'}</div>
+          <span class="p-badge ${p.badge === 'now' ? 'now' : 'soon'}"><span class="dot"></span>${esc(p.badgeLabel)}</span>
+          <h3>${esc(p.name)}</h3>
+          <p class="p-desc">${esc(p.desc)}</p>
+          <div class="p-price">${p.price ? `<span class="amt">${esc(p.price)}</span><span class="per">${esc(p.per)}</span>` : `<span class="tbd">${esc(T('priceTbd'))}</span>`}</div>
           <div class="p-div"></div>
           <ul class="p-feats">
-            ${p.feats.map(f => `<li><svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2.5 6.8l2.6 2.7L10.5 3.6" stroke="rgba(245,245,245,0.55)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>${f}</span></li>`).join('')}
+            ${p.feats.map(f => `<li><svg width="13" height="13" viewBox="0 0 13 13" fill="none"><path d="M2.5 6.8l2.6 2.7L10.5 3.6" stroke="rgba(245,245,245,0.55)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>${esc(f)}</span></li>`).join('')}
           </ul>
-          ${p.href ? `<a class="btn btn-primary p-cta" href="${p.href}">${p.cta}</a>` : `<button class="btn btn-ghost p-cta" disabled>${p.cta}</button>`}
+          ${p.href ? `<a class="btn btn-primary p-cta" href="${p.href}">${esc(p.cta)}</a>` : `<button class="btn btn-ghost p-cta" disabled>${esc(p.cta)}</button>`}
         </div>`).join('')}
       </div>
-      <p class="pricing-note rv-fade" style="--d:.9s">Free is free. The rest arrives when it is ready.</p>
+      <p class="pricing-note rv-fade" style="--d:.9s">${esc(T('pricingNote'))}</p>
       <div class="faq">
-        <h2 class="rv" style="--d:1s">Questions, answered</h2>
-        ${FAQS.map((f, i) => `
+        <h2 class="rv" style="--d:1s">${esc(T('pqTitle'))}</h2>
+        ${PRICING_FAQ_KEYS.map((k, i) => `
         <div class="faq-item rv" style="--d:${(1.05 + i * 0.08).toFixed(2)}s">
-          <button class="faq-q" data-faq="${i}">${f.q}<span class="ic"></span></button>
-          <div class="faq-a"><div><p>${f.a}</p></div></div>
+          <button class="faq-q" data-faq="${i}">${esc(T(k))}<span class="ic"></span></button>
+          <div class="faq-a"><div><p>${esc(T('pa' + k.slice(2)))}</p></div></div>
         </div>`).join('')}
       </div>
     </div>
@@ -434,84 +515,89 @@ async function viewStatus() {
   const data = await fetchJSON('/api/status');
   const svc = data.services;
   const worst = svc.some(s => s.status === 'outage') ? 'bad' : svc.some(s => s.status === 'degraded') ? 'warn' : 'ok';
-  const title = worst === 'ok' ? 'All systems operational' : worst === 'warn' ? 'Partial performance degradation' : 'Disruption in progress';
+  const title = worst === 'ok' ? T('stOk') : worst === 'warn' ? T('stWarn') : T('stBad');
   const incidents = [];
   svc.forEach(s => {
     let run = null;
     for (let i = 0; i < 90; i++) {
       const v = s.history[i];
       if (v !== 'ok') {
-        if (!run) run = { name: s.name, start: i, end: i, worst: v };
+        if (!run) run = { name: svcLabel(s), start: i, end: i, worst: v };
         else { run.end = i; if (v === 'outage') run.worst = 'outage'; }
       } else if (run) { incidents.push(run); run = null; }
     }
     if (run) incidents.push(run);
   });
   incidents.sort((a, b) => b.end - a.end);
-  const day = i => new Date(Date.now() - (89 - i) * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+  const day = i => fmtDay(Date.now() - (89 - i) * 86400000);
   return `
   <div class="wrap">
     <div class="page-head" style="padding-bottom:26px">
-      <span class="eyebrow rv-fade"><span class="tick"></span>Status</span>
+      <span class="eyebrow rv-fade"><span class="tick"></span>${esc(T('navStatus'))}</span>
     </div>
-    <div class="status-head rv" style="--d:.1s"><span class="status-dot ${worst}"></span><span class="status-title">${title}</span></div>
-    <p class="status-updated rv" style="--d:.16s">Updated ${timeAgo(data.updated)} · last 90 days</p>
+    <div class="status-head rv" style="--d:.1s"><span class="status-dot ${worst}"></span><span class="status-title">${esc(title)}</span></div>
+    <p class="status-updated rv" style="--d:.16s">${esc(T('stUpdated', { t: timeAgo(data.updated) }))}</p>
     <div class="svc-grid">
       ${svc.map((s, si) => `
       <div class="svc-card rv" style="--d:${(0.2 + si * 0.09).toFixed(2)}s">
-        <div class="s-top"><span class="s-name">${esc(s.name)}</span><span class="status-dot ${s.status === 'ok' ? 'ok' : s.status === 'degraded' ? 'warn' : 'bad'}" style="width:10px;height:10px"></span></div>
-        <div class="s-desc">${esc(s.description)}</div>
+        <div class="s-top"><span class="s-name">${esc(svcLabel(s))}</span><span class="status-dot ${s.status === 'ok' ? 'ok' : s.status === 'degraded' ? 'warn' : 'bad'}" style="width:10px;height:10px"></span></div>
+        <div class="s-desc">${esc(svcLabel(s, '_d'))}</div>
         <div class="s-strip">${s.history.map((v, i) => `<i class="${v === 'degraded' ? 'd' : v === 'outage' ? 'o' : ''}" style="--d:${i * 6 + si * 40}ms"></i>`).join('')}</div>
       </div>`).join('')}
     </div>
-    <div class="status-label rv" style="--d:.5s"><span>90-day history</span>
+    <div class="status-label rv" style="--d:.5s"><span>${esc(T('history90'))}</span>
       <span class="legend">
-        <span><i style="background:rgba(62,207,142,0.55)"></i>Operational</span>
-        <span><i style="background:var(--amber)"></i>Degraded</span>
-        <span><i style="background:var(--red)"></i>Outage</span>
+        <span><i style="background:rgba(62,207,142,0.55)"></i>${esc(T('legendOk'))}</span>
+        <span><i style="background:var(--amber)"></i>${esc(T('legendDeg'))}</span>
+        <span><i style="background:var(--red)"></i>${esc(T('legendOut'))}</span>
       </span>
     </div>
     <div class="incidents rv" style="--d:.56s">
       ${incidents.length ? incidents.slice(0, 6).map(inc => `
         <div class="incident">
           <span class="i-dot ${inc.worst === 'outage' ? 'o' : 'd'}"></span>
-          <div><div class="i-title">${esc(inc.name)} — ${inc.worst === 'outage' ? 'Outage' : 'Degraded performance'}</div>
-          <div class="i-sub">Resolved · history ${day(inc.start)} – ${day(inc.end)}</div></div>
+          <div><div class="i-title">${esc(inc.name)} — ${inc.worst === 'outage' ? esc(T('incOutage')) : esc(T('incDegraded'))}</div>
+          <div class="i-sub">${esc(T('incResolved', { a: day(inc.start), b: day(inc.end) }))}</div></div>
           <span class="i-date">${day(inc.end)}</span>
-        </div>`).join('') : '<div class="no-incidents">No incidents in the last 90 days.</div>'}
+        </div>`).join('') : `<div class="no-incidents">${esc(T('noIncidents'))}</div>`}
     </div>
   </div>`;
 }
 
 /* support */
+const TOPIC_KEYS = [
+  ['General', 'topGeneral'], ['Bug report', 'topBug'], ['Feature request', 'topFeature'],
+  ['API access', 'topApi'], ['Billing', 'topBilling'], ['Other', 'topOther'],
+];
+
 function viewSupport() {
   return `
   <div class="wrap">
     <div class="page-head">
-      <span class="eyebrow rv-fade"><span class="tick"></span>Support</span>
-      <h1 class="rv" style="--d:.08s">Talk to a person</h1>
-      <p class="sub rv" style="--d:.16s">Bug, idea, problem with a memory, or a note for the API team — it all lands on a real inbox that a person reads.</p>
+      <span class="eyebrow rv-fade"><span class="tick"></span>${esc(T('navSupport'))}</span>
+      <h1 class="rv" style="--d:.08s">${esc(T('supportHead'))}</h1>
+      <p class="sub rv" style="--d:.16s">${esc(T('supportSub'))}</p>
     </div>
     <div class="support-grid">
       <div>
         <form id="supportForm" novalidate>
           <div class="field-row">
-            <div class="field" data-f="name"><label for="s-name">Name</label><input id="s-name" name="name" type="text" placeholder="Your name" autocomplete="name"><span class="err">Please tell us your name.</span></div>
-            <div class="field" data-f="email"><label for="s-email">Email</label><input id="s-email" name="email" type="email" placeholder="you@example.com" autocomplete="email"><span class="err">A valid email lets us reply.</span></div>
+            <div class="field" data-f="name"><label for="s-name">${esc(T('fName'))}</label><input id="s-name" name="name" type="text" placeholder="${esc(T('phName'))}" autocomplete="name"><span class="err">${esc(T('errName'))}</span></div>
+            <div class="field" data-f="email"><label for="s-email">${esc(T('fEmail'))}</label><input id="s-email" name="email" type="email" placeholder="${esc(T('phEmail'))}" autocomplete="email"><span class="err">${esc(T('errEmail'))}</span></div>
           </div>
-          <div class="field"><label for="s-topic">Topic</label>
+          <div class="field"><label for="s-topic">${esc(T('fTopic'))}</label>
             <select id="s-topic" name="topic">
-              <option>General</option><option>Bug report</option><option>Feature request</option><option>API access</option><option>Billing</option><option>Other</option>
+              ${TOPIC_KEYS.map(([v, k]) => `<option value="${esc(v)}">${esc(T(k))}</option>`).join('')}
             </select>
           </div>
-          <div class="field" data-f="message"><label for="s-msg">Message</label><textarea id="s-msg" name="message" placeholder="What is on your mind?"></textarea><span class="err">A message, even a short one.</span></div>
-          <button class="btn btn-primary" type="submit" style="width:100%">Send message <span class="arr">→</span></button>
+          <div class="field" data-f="message"><label for="s-msg">${esc(T('fMessage'))}</label><textarea id="s-msg" name="message" placeholder="${esc(T('phMessage'))}"></textarea><span class="err">${esc(T('errMessage'))}</span></div>
+          <button class="btn btn-primary" type="submit" style="width:100%">${esc(T('send'))} <span class="arr">→</span></button>
         </form>
       </div>
       <div class="support-info">
-        <div class="info-card rv" style="--d:.2s"><div class="ic-t"><span>⏱</span>Response time</div><div class="ic-b">Every message is answered within 24 hours on working days. Usually much faster.</div></div>
-        <div class="info-card rv" style="--d:.3s"><div class="ic-t"><span>◈</span>API access</div><div class="ic-b">There is no public API yet — no keys, no endpoints. If you are waiting for it, choose "API access" as the topic and you will be told the day it opens.</div></div>
-        <div class="info-card rv" style="--d:.4s"><div class="ic-t"><span>▤</span>Before you write</div><div class="ic-b">If it is about the product not working, check the <a href="/status" style="color:var(--text);font-weight:600">status page</a> first — it keeps 90 days of history.</div></div>
+        <div class="info-card rv" style="--d:.2s"><div class="ic-t"><span>⏱</span>${esc(T('infoRt'))}</div><div class="ic-b">${esc(T('infoRtB'))}</div></div>
+        <div class="info-card rv" style="--d:.3s"><div class="ic-t"><span>◈</span>${esc(T('infoApi'))}</div><div class="ic-b">${esc(T('infoApiB'))}</div></div>
+        <div class="info-card rv" style="--d:.4s"><div class="ic-t"><span>▤</span>${esc(T('infoBefore'))}</div><div class="ic-b">${T('infoBeforeB', { status: `<a href="/status" style="color:var(--text);font-weight:600">${esc(T('statusPage'))}</a>` })}</div></div>
       </div>
     </div>
   </div>`;
@@ -531,31 +617,23 @@ function onSupport() {
     if (!ok) return;
     const btn = form.querySelector('button[type=submit]');
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner"></span> Sending…';
+    btn.innerHTML = `<span class="spinner"></span> ${esc(T('sending'))}`;
     try {
       await fetchJSON('/api/support', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data) });
       form.closest('.support-grid').firstElementChild.innerHTML = `
         <div class="success-view">
           <svg viewBox="0 0 80 80" fill="none"><circle class="sv-circle" cx="40" cy="40" r="36" stroke-width="1.5"/><path class="sv-check" d="M26 41.5l9.5 9.5L55 30" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-          <h2>Message received</h2>
-          <p>We will reply to <b>${esc(data.email.trim())}</b> by email within 24 hours on working days. No chat, no tickets — the conversation continues in your inbox.</p>
+          <h2>${esc(T('msgOk'))}</h2>
+          <p>${T('msgOkB', { email: `<b>${esc(data.email.trim())}</b>` })}</p>
         </div>`;
     } catch (err) {
       btn.disabled = false;
-      btn.innerHTML = 'Send message <span class="arr">→</span>';
+      btn.innerHTML = `${esc(T('send'))} <span class="arr">→</span>`;
     }
   });
 }
 
 /* ---------- auth ---------- */
-const PHIL = [
-  'Most answers are noise with confidence.',
-  'The first question is the easy part.',
-  'Clarity is a discipline, not a style.',
-  'Think quietly. Answer sharply.',
-  'You do not need more information. You need better questions.',
-  'A good conversation makes you sharper than the debate.',
-];
 let philTimer = null;
 
 function authShell(viewName, cardInner, title) {
@@ -568,14 +646,14 @@ function authShell(viewName, cardInner, title) {
       <div class="auth-side-glow"></div>
       <div class="phil" id="phil">
         <div class="phil-phrase" id="philPhrase"></div>
-        <div class="phil-index"><span id="philIdx">01</span> / 0${PHIL.length}</div>
+        <div class="phil-index"><span id="philIdx">01</span> / 06</div>
       </div>
       <div class="auth-side-mark"><span class="dot"></span>Turing</div>
     </div>
     <div class="auth-main">
       <div class="auth-card">
         <a class="a-logo" href="/">Turing</a>
-        <h1 class="rv" style="--d:.05s">${title}</h1>
+        <h1 class="rv" style="--d:.05s">${esc(title)}</h1>
         ${cardInner}
       </div>
     </div>
@@ -586,6 +664,7 @@ function startPhilosophy() {
   const phrase = el('#philPhrase');
   const idx = el('#philIdx');
   if (!phrase) { clearInterval(philTimer); return; }
+  const PHIL = [1, 2, 3, 4, 5, 6].map(i => T('phil' + i));
   let i = 0;
   const show = () => {
     const text = PHIL[i];
@@ -607,7 +686,7 @@ function blockBanner(text) {
 function pwField(id, label, value = '') {
   return `<div class="field">
     <label for="${id}">${label}</label>
-    <div class="pw-wrap"><input id="${id}" type="password" autocomplete="new-password" value="${esc(value)}"><button type="button" class="pw-toggle" data-target="${id}">SHOW</button></div>
+    <div class="pw-wrap"><input id="${id}" type="password" autocomplete="new-password" value="${esc(value)}"><button type="button" class="pw-toggle" data-target="${id}">${esc(T('show'))}</button></div>
   </div>`;
 }
 function bindPwToggles() {
@@ -615,7 +694,7 @@ function bindPwToggles() {
     const inp = el('#' + b.dataset.target);
     const show = inp.type === 'password';
     inp.type = show ? 'text' : 'password';
-    b.textContent = show ? 'HIDE' : 'SHOW';
+    b.textContent = show ? T('hide') : T('show');
   }));
 }
 function asyncSubmit(btn, fn) {
@@ -628,17 +707,17 @@ function asyncSubmit(btn, fn) {
 function viewLogin() {
   const blocked = state.site && state.site.blockLogins;
   return authShell('login', `
-    <p class="a-sub rv" style="--d:.1s">Welcome back. The conversation continues.</p>
-    ${blocked ? blockBanner('Logins are temporarily disabled. We will turn them back on shortly.') : ''}
+    <p class="a-sub rv" style="--d:.1s">${esc(T('loginSub'))}</p>
+    ${blocked ? blockBanner(esc(T('blockLogins'))) : ''}
     <form id="loginForm" novalidate ${blocked ? 'data-disabled="1"' : ''}>
-      <div class="field"><label for="l-email">Email</label><input id="l-email" type="email" placeholder="you@example.com" autocomplete="email"></div>
-      <div class="field"><label for="l-pass">Password <a href="/reset" style="float:right;color:var(--text-3);font-weight:500;font-size:12.5px">Forgot?</a></label>
-        <div class="pw-wrap"><input id="l-pass" type="password" autocomplete="current-password"><button type="button" class="pw-toggle" data-target="l-pass">SHOW</button></div>
+      <div class="field"><label for="l-email">${esc(T('fEmail'))}</label><input id="l-email" type="email" placeholder="${esc(T('phEmail'))}" autocomplete="email"></div>
+      <div class="field"><label for="l-pass">${esc(T('fPassword'))}<a href="/reset" style="float:right;color:var(--text-3);font-weight:500;font-size:12.5px">${esc(T('forgot'))}</a></label>
+        <div class="pw-wrap"><input id="l-pass" type="password" autocomplete="current-password"><button type="button" class="pw-toggle" data-target="l-pass">${esc(T('show'))}</button></div>
       </div>
       <div id="loginErr" class="form-err" hidden></div>
-      <button class="btn btn-primary" type="submit" style="width:100%">Sign in <span class="arr">→</span></button>
+      <button class="btn btn-primary" type="submit" style="width:100%">${esc(T('loginTitle'))} <span class="arr">→</span></button>
     </form>
-    <p class="a-alt rv" style="--d:.2s">No account yet? <a href="/register">Create one</a></p>`, 'Sign in');
+    <p class="a-alt rv" style="--d:.2s">${esc(T('noAccount'))} <a href="/register">${esc(T('createOne'))}</a></p>`, T('loginTitle'));
 }
 
 function onLogin() {
@@ -657,7 +736,7 @@ function onLogin() {
         renderHeader();
         withTransition(() => { history.pushState({}, '', '/'); renderRoute('/'); });
       } catch (e2) {
-        err.textContent = e2.data?.message || 'Something went wrong.';
+        err.textContent = apiError(e2, { invalid: 'e_invalidCreds', blocked: 'e_blockedLogin' });
         err.style.display = 'block';
       }
     });
@@ -667,21 +746,21 @@ function onLogin() {
 function viewRegister() {
   const blocked = state.site && state.site.blockRegistrations;
   return authShell('register', `
-    <p class="a-sub rv" style="--d:.1s">One account. Everything you say stays with you.</p>
-    ${blocked ? blockBanner('Registrations are temporarily disabled. We will turn them back on shortly.') : ''}
+    <p class="a-sub rv" style="--d:.1s">${esc(T('regSub'))}</p>
+    ${blocked ? blockBanner(esc(T('blockRegs'))) : ''}
     <form id="regForm" novalidate ${blocked ? 'data-disabled="1"' : ''}>
-      <div class="field"><label for="r-name">Name</label><input id="r-name" type="text" placeholder="What should we call you?" autocomplete="name"></div>
-      <div class="field"><label for="r-email">Email</label><input id="r-email" type="email" placeholder="you@example.com" autocomplete="email"></div>
-      <div class="field"><label for="r-pass">Password</label>
-        <div class="pw-wrap"><input id="r-pass" type="password" placeholder="At least 8 characters" autocomplete="new-password"><button type="button" class="pw-toggle" data-target="r-pass">SHOW</button></div>
+      <div class="field"><label for="r-name">${esc(T('fName'))}</label><input id="r-name" type="text" placeholder="${esc(T('namePh'))}" autocomplete="name"></div>
+      <div class="field"><label for="r-email">${esc(T('fEmail'))}</label><input id="r-email" type="email" placeholder="${esc(T('phEmail'))}" autocomplete="email"></div>
+      <div class="field"><label for="r-pass">${esc(T('fPassword'))}</label>
+        <div class="pw-wrap"><input id="r-pass" type="password" placeholder="${esc(T('passPh'))}" autocomplete="new-password"><button type="button" class="pw-toggle" data-target="r-pass">${esc(T('show'))}</button></div>
       </div>
-      <div class="field"><label for="r-pass2">Confirm password</label>
-        <div class="pw-wrap"><input id="r-pass2" type="password" autocomplete="new-password"><button type="button" class="pw-toggle" data-target="r-pass2">SHOW</button></div>
+      <div class="field"><label for="r-pass2">${esc(T('fConfirm'))}</label>
+        <div class="pw-wrap"><input id="r-pass2" type="password" autocomplete="new-password"><button type="button" class="pw-toggle" data-target="r-pass2">${esc(T('show'))}</button></div>
       </div>
       <div id="regErr" style="font-size:13px;color:var(--red);margin-bottom:14px;display:none"></div>
-      <button class="btn btn-primary" type="submit" style="width:100%">Create account <span class="arr">→</span></button>
+      <button class="btn btn-primary" type="submit" style="width:100%">${esc(T('createAccount'))} <span class="arr">→</span></button>
     </form>
-    <p class="a-alt rv" style="--d:.2s">Already have one? <a href="/login">Sign in</a></p>`, 'Create your account');
+    <p class="a-alt rv" style="--d:.2s">${esc(T('haveAccount'))} <a href="/login">${esc(T('loginTitle'))}</a></p>`, T('regTitle'));
 }
 
 function onRegister() {
@@ -694,7 +773,7 @@ function onRegister() {
     const err = el('#regErr');
     err.style.display = 'none';
     const name = $('#r-name').value.trim(), email = $('#r-email').value.trim(), p1 = $('#r-pass').value, p2 = $('#r-pass2').value;
-    if (p1 !== p2) { err.textContent = 'Passwords do not match.'; err.style.display = 'block'; return; }
+    if (p1 !== p2) { err.textContent = T('pwMismatch'); err.style.display = 'block'; return; }
     asyncSubmit(form.querySelector('button[type=submit]'), async () => {
       try {
         const r = await fetchJSON('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, email, password: p1 }) });
@@ -702,7 +781,7 @@ function onRegister() {
         renderHeader();
         withTransition(() => { history.pushState({}, '', '/onboard'); renderRoute('/onboard'); });
       } catch (e2) {
-        err.textContent = e2.data?.message || 'Something went wrong.';
+        err.textContent = apiError(e2, { invalid: 'e_regInvalid', exists: 'e_exists', blocked: 'e_blockedReg' });
         err.style.display = 'block';
       }
     });
@@ -711,12 +790,12 @@ function onRegister() {
 
 function viewReset() {
   return authShell('reset', `
-    <p class="a-sub rv" style="--d:.1s">Enter the email on your account and we will send a reset link. It expires in 24 hours.</p>
+    <p class="a-sub rv" style="--d:.1s">${esc(T('resetSub'))}</p>
     <form id="resetForm" novalidate>
-      <div class="field"><label for="rt-email">Email</label><input id="rt-email" type="email" placeholder="you@example.com" autocomplete="email"></div>
-      <button class="btn btn-primary" type="submit" style="width:100%">Send reset link <span class="arr">→</span></button>
+      <div class="field"><label for="rt-email">${esc(T('fEmail'))}</label><input id="rt-email" type="email" placeholder="${esc(T('phEmail'))}" autocomplete="email"></div>
+      <button class="btn btn-primary" type="submit" style="width:100%">${esc(T('sendReset'))} <span class="arr">→</span></button>
     </form>
-    <p class="a-alt rv" style="--d:.2s">Remembered it after all? <a href="/login">Sign in</a></p>`, 'Reset your password');
+    <p class="a-alt rv" style="--d:.2s">${esc(T('remembered'))} <a href="/login">${esc(T('loginTitle'))}</a></p>`, T('resetTitle'));
 }
 
 function onReset() {
@@ -729,16 +808,16 @@ function onReset() {
     const card = form.closest('.auth-card');
     asyncSubmit(form.querySelector('button[type=submit]'), async () => {
       const r = await fetchJSON('/api/auth/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
-      const title = r.state === 'sent' ? 'Check your inbox' : r.state === 'not_configured' ? 'Almost there' : 'Request received';
+      const title = r.state === 'sent' ? T('checkInbox') : r.state === 'not_configured' ? T('almostThere') : T('requestReceived');
       const msg = r.state === 'not_configured'
-        ? `Your account exists, but email delivery is not configured yet. Add your Resend API key to <b style="color:var(--text)">config.json</b> and try again.`
-        : `If an account exists for <b style="color:var(--text)">${esc(email)}</b>, a reset link is on its way. It expires in 24 hours.`;
+        ? esc(T('notConfigured')).replace('config.json', '<b style="color:var(--text)">config.json</b>')
+        : T('resetSent', { email: `<b style="color:var(--text)">${esc(email)}</b>` });
       card.innerHTML = `<a class="a-logo" href="/">Turing</a>
         <div class="sent-state">
           <span class="s-ic">✉</span>
-          <h3>${title}</h3>
+          <h3>${esc(title)}</h3>
           <p>${msg}</p>
-          <a class="btn btn-ghost" href="/login" style="margin-top:8px">Back to sign in</a>
+          <a class="btn btn-ghost" href="/login" style="margin-top:8px">${esc(T('backSignIn'))}</a>
         </div>`;
     });
   });
@@ -746,9 +825,13 @@ function onReset() {
 
 function viewRecovery() {
   return authShell('recovery', `
-    <p class="a-sub rv" style="--d:.1s">Validating your link…</p>
+    <p class="a-sub rv" style="--d:.1s">${esc(T('validating'))}</p>
     <div id="recoverBox"></div>
-    <p class="a-alt rv" style="--d:.2s"><a href="/reset">Link expired?</a> &nbsp;·&nbsp; <a href="/login">Back to sign in</a></p>`, 'Choose a new password');
+    <p class="a-alt rv" style="--d:.2s"><a href="/reset">${esc(T('linkExpired'))}</a> &nbsp;·&nbsp; <a href="/login">${esc(T('backSignIn'))}</a></p>`, T('recTitle'));
+}
+
+function expiredBox(msg) {
+  return `<div class="sent-state"><span class="s-ic">⌛</span><h3>${esc(T('expT'))}</h3><p>${esc(msg)}</p><a class="btn btn-ghost" href="/reset" style="margin-top:8px">${esc(T('requestNew'))}</a></div>`;
 }
 
 async function onRecovery() {
@@ -757,24 +840,21 @@ async function onRecovery() {
   const token = new URLSearchParams(location.search).get('token') || '';
   try {
     const r = await fetchJSON(`/api/auth/recovery-check?token=${encodeURIComponent(token)}`);
-    if (!r.valid) {
-      box.innerHTML = `<div class="sent-state"><span class="s-ic">⌛</span><h3>This link has expired</h3><p>Reset links are valid for 24 hours. Request a fresh one and it will arrive in seconds.</p><a class="btn btn-ghost" href="/reset" style="margin-top:8px">Request a new link</a></div>`;
-      return;
-    }
+    if (!r.valid) { box.innerHTML = expiredBox(T('expB')); return; }
   } catch {
-    box.innerHTML = `<div class="sent-state"><span class="s-ic">⌛</span><h3>This link has expired</h3><p>Request a fresh reset link to continue.</p><a class="btn btn-ghost" href="/reset" style="margin-top:8px">Request a new link</a></div>`;
+    box.innerHTML = expiredBox(T('expB2'));
     return;
   }
   box.innerHTML = `
     <form id="recForm" novalidate>
-      <div class="field"><label for="n-pass">New password</label>
-        <div class="pw-wrap"><input id="n-pass" type="password" placeholder="At least 8 characters" autocomplete="new-password"><button type="button" class="pw-toggle" data-target="n-pass">SHOW</button></div>
+      <div class="field"><label for="n-pass">${esc(T('fNewPass'))}</label>
+        <div class="pw-wrap"><input id="n-pass" type="password" placeholder="${esc(T('passPh'))}" autocomplete="new-password"><button type="button" class="pw-toggle" data-target="n-pass">${esc(T('show'))}</button></div>
       </div>
-      <div class="field"><label for="n-pass2">Confirm new password</label>
-        <div class="pw-wrap"><input id="n-pass2" type="password" autocomplete="new-password"><button type="button" class="pw-toggle" data-target="n-pass2">SHOW</button></div>
+      <div class="field"><label for="n-pass2">${esc(T('fConfirmNew'))}</label>
+        <div class="pw-wrap"><input id="n-pass2" type="password" autocomplete="new-password"><button type="button" class="pw-toggle" data-target="n-pass2">${esc(T('show'))}</button></div>
       </div>
       <div id="recErr" style="font-size:13px;color:var(--red);margin-bottom:14px;display:none"></div>
-      <button class="btn btn-primary" type="submit" style="width:100%">Set new password <span class="arr">→</span></button>
+      <button class="btn btn-primary" type="submit" style="width:100%">${esc(T('setNewPass'))} <span class="arr">→</span></button>
     </form>`;
   bindPwToggles();
   box.querySelector('#recForm').addEventListener('submit', e => {
@@ -782,13 +862,13 @@ async function onRecovery() {
     const err = el('#recErr');
     err.style.display = 'none';
     const p1 = $('#n-pass').value, p2 = $('#n-pass2').value;
-    if (p1 !== p2) { err.textContent = 'Passwords do not match.'; err.style.display = 'block'; return; }
+    if (p1 !== p2) { err.textContent = T('pwMismatch'); err.style.display = 'block'; return; }
     asyncSubmit(box.querySelector('button[type=submit]'), async () => {
       try {
         await fetchJSON('/api/auth/recover', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token, password: p1 }) });
-        box.innerHTML = `<div class="sent-state"><span class="s-ic">✓</span><h3>Password updated</h3><p>Your new password is set. Sign in with it from here.</p><a class="btn btn-primary" href="/login" style="margin-top:8px">Sign in <span class="arr">→</span></a></div>`;
+        box.innerHTML = `<div class="sent-state"><span class="s-ic">✓</span><h3>${esc(T('pwOkT'))}</h3><p>${esc(T('pwOkB'))}</p><a class="btn btn-primary" href="/login" style="margin-top:8px">${esc(T('loginTitle'))} <span class="arr">→</span></a></div>`;
       } catch (e2) {
-        err.textContent = e2.data?.message || 'Something went wrong.';
+        err.textContent = apiError(e2, { expired: 'e_recExpired', invalid: 'e_recShort' });
         err.style.display = 'block';
       }
     });
@@ -796,7 +876,10 @@ async function onRecovery() {
 }
 
 /* ---------- onboarding ---------- */
-const USAGE_OPTIONS = ['Writing', 'Research', 'Coding', 'Learning', 'Planning', 'Ideas & thinking'];
+const USAGE_KEYS = [
+  ['Writing', 'useWriting'], ['Research', 'useResearch'], ['Coding', 'useCoding'],
+  ['Learning', 'useLearning'], ['Planning', 'usePlanning'], ['Ideas & thinking', 'useIdeas'],
+];
 
 function onbWords(text, base = 0.16, gap = 0.085) {
   return text.split(' ').map((w, i) => `<span class="w"><span class="wi" style="--d:${(base + i * gap).toFixed(3)}s">${w}</span></span>`).join(' ');
@@ -826,59 +909,59 @@ async function onOnboard() {
   function stepHtml(i) {
     if (i === 0) return `
       <div class="onb-step" data-step="0">
-        <span class="onb-eyebrow rv-fade">Onboarding</span>
-        <h1>${words('Welcome, ' + esc(first) + '.')}</h1>
-        <p class="onb-sub rv" style="--d:.7s">Two minutes. A few questions so Turing works the way you think — not the other way around.</p>
-        <button class="btn btn-primary onb-next" style="margin-top:34px">Let's go <span class="arr">→</span></button>
+        <span class="onb-eyebrow rv-fade">${esc(T('onbEyebrow'))}</span>
+        <h1>${words(esc(T('onbWelcome', { name: first })))}</h1>
+        <p class="onb-sub rv" style="--d:.7s">${esc(T('onbSub'))}</p>
+        <button class="btn btn-primary onb-next" style="margin-top:34px">${esc(T('letsGo'))} <span class="arr">→</span></button>
       </div>`;
     if (i === 1) return `
       <div class="onb-step" data-step="1">
-        <span class="onb-eyebrow rv-fade">Step 01</span>
-        <h1>${words('How old are you?')}</h1>
-        <p class="onb-sub rv" style="--d:.6s">Turing is for people 13 and up. This stays on your account — it is used for nothing else.</p>
+        <span class="onb-eyebrow rv-fade">${esc(T('step', { n: '01' }))}</span>
+        <h1>${words(esc(T('ageT')))}</h1>
+        <p class="onb-sub rv" style="--d:.6s">${esc(T('ageSub'))}</p>
         <div class="onb-age rv" style="--d:.7s">
-          <input id="ageInput" type="text" inputmode="numeric" placeholder="Your age" maxlength="3" autocomplete="off">
+          <input id="ageInput" type="text" inputmode="numeric" placeholder="${esc(T('agePh'))}" maxlength="3" autocomplete="off">
         </div>
-        <div class="onb-warn" id="ageWarn" hidden>Turing is for 13 and up. Come back when the time is right.</div>
-        <button class="btn btn-primary onb-next" disabled style="margin-top:30px">Continue <span class="arr">→</span></button>
+        <div class="onb-warn" id="ageWarn" hidden>${esc(T('ageWarn'))}</div>
+        <button class="btn btn-primary onb-next" disabled style="margin-top:30px">${esc(T('continue_'))} <span class="arr">→</span></button>
       </div>`;
     if (i === 2) return `
       <div class="onb-step" data-step="2">
-        <span class="onb-eyebrow rv-fade">Step 02</span>
-        <h1>${words('What will you put it to?')}</h1>
-        <p class="onb-sub rv" style="--d:.6s">Pick as many as you like. It tunes nothing — it just means you and Turing start speaking the same language.</p>
+        <span class="onb-eyebrow rv-fade">${esc(T('step', { n: '02' }))}</span>
+        <h1>${words(esc(T('useT')))}</h1>
+        <p class="onb-sub rv" style="--d:.6s">${esc(T('useSub'))}</p>
         <div class="onb-chips rv" style="--d:.7s" id="usageChips">
-          ${USAGE_OPTIONS.map(u => `<button class="chip-opt" data-usage="${u}">${u}</button>`).join('')}
+          ${USAGE_KEYS.map(([v, k]) => `<button class="chip-opt" data-usage="${esc(v)}">${esc(T(k))}</button>`).join('')}
         </div>
-        <button class="btn btn-primary onb-next" style="margin-top:30px">Continue <span class="arr">→</span></button>
+        <button class="btn btn-primary onb-next" style="margin-top:30px">${esc(T('continue_'))} <span class="arr">→</span></button>
       </div>`;
     if (i === 3) return `
       <div class="onb-step" data-step="3">
-        <span class="onb-eyebrow rv-fade">Step 03</span>
-        <h1>${words('How Turing thinks')}</h1>
-        <p class="onb-sub rv" style="--d:.6s">Three commitments. They are the whole design.</p>
+        <span class="onb-eyebrow rv-fade">${esc(T('step', { n: '03' }))}</span>
+        <h1>${words(esc(T('thinkT')))}</h1>
+        <p class="onb-sub rv" style="--d:.6s">${esc(T('thinkSub'))}</p>
         <div class="onb-cards">
-          <div class="onb-card rv" style="--d:.75s"><div class="oc-n">01</div><h3>Precise reasoning</h3><p>It works through your question step by step and leads with the point — the support comes after, only if it earns its place.</p></div>
-          <div class="onb-card rv" style="--d:.9s"><div class="oc-n">02</div><h3>Real memory</h3><p>Facts you state stay in the conversation, attributed to you and never invented. If it does not remember, it says so.</p></div>
-          <div class="onb-card rv" style="--d:1.05s"><div class="oc-n">03</div><h3>Honest confidence</h3><p>When it is guessing, it tells you it is guessing. You always know which side of the line an answer sits on.</p></div>
+          <div class="onb-card rv" style="--d:.75s"><div class="oc-n">01</div><h3>${esc(T('oc1t'))}</h3><p>${esc(T('oc1b'))}</p></div>
+          <div class="onb-card rv" style="--d:.9s"><div class="oc-n">02</div><h3>${esc(T('oc2t'))}</h3><p>${esc(T('oc2b'))}</p></div>
+          <div class="onb-card rv" style="--d:1.05s"><div class="oc-n">03</div><h3>${esc(T('oc3t'))}</h3><p>${esc(T('oc3b'))}</p></div>
         </div>
-        <button class="btn btn-primary onb-next" style="margin-top:30px">Got it <span class="arr">→</span></button>
+        <button class="btn btn-primary onb-next" style="margin-top:30px">${esc(T('gotIt'))} <span class="arr">→</span></button>
       </div>`;
     if (i === 4) return `
       <div class="onb-step" data-step="4">
-        <span class="onb-eyebrow rv-fade">Step 04</span>
-        <h1>${words('Before you start')}</h1>
+        <span class="onb-eyebrow rv-fade">${esc(T('step', { n: '04' }))}</span>
+        <h1>${words(esc(T('beforeT')))}</h1>
         <div class="onb-terms rv" style="--d:.6s">
-          <div class="ot-row"><span class="ot-k">Your data</span><span>Your name, email and conversations exist to run the service. No selling, no ads, no tracking. Full detail in the <a href="/privacy">privacy policy</a>.</span></div>
-          <div class="ot-row"><span class="ot-k">The AI</span><span>Turing reasons — it can be wrong. It labels its guesses and says "I don't know" when it should. Verify anything with real stakes.</span></div>
-          <div class="ot-row"><span class="ot-k">Your rights</span><span>You can ask to see, correct or delete your data at any time. The support page is the route; a person reads everything.</span></div>
+          <div class="ot-row"><span class="ot-k">${esc(T('otData'))}</span><span>${T('otDataB', { privacy: `<a href="/privacy">${esc(T('privacyPolicy'))}</a>` })}</span></div>
+          <div class="ot-row"><span class="ot-k">${esc(T('otAi'))}</span><span>${esc(T('otAiB'))}</span></div>
+          <div class="ot-row"><span class="ot-k">${esc(T('otRights'))}</span><span>${esc(T('otRightsB'))}</span></div>
         </div>
         <label class="onb-check rv" style="--d:.75s">
           <input type="checkbox" id="termsCheck">
           <span class="onb-box" aria-hidden="true"><svg viewBox="0 0 12 10" fill="none"><path d="M1.5 5.2l3 3L10.5 1.6" stroke="#0A0A0A" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
-          <span>I'm 13 or older and I accept the <a href="/terms">terms of service</a> and the <a href="/privacy">privacy policy</a>.</span>
+          <span>${T('onbAgree', { terms: `<a href="/terms">${esc(T('termsService'))}</a>`, privacy: `<a href="/privacy">${esc(T('privacyPolicy'))}</a>` })}</span>
         </label>
-        <button class="btn btn-primary onb-next" disabled style="margin-top:26px">Finish setup <span class="arr">→</span></button>
+        <button class="btn btn-primary onb-next" disabled style="margin-top:26px">${esc(T('finish'))} <span class="arr">→</span></button>
       </div>`;
     // 5 = done
     return `
@@ -887,9 +970,9 @@ async function onOnboard() {
           <span style="--x:-90px;--y:-120px;--d:.05s"></span><span style="--x:70px;--y:-150px;--d:.15s"></span><span style="--x:-140px;--y:-40px;--d:.25s"></span><span style="--x:130px;--y:-70px;--d:.35s"></span><span style="--x:-40px;--y:-180px;--d:.45s"></span><span style="--x:30px;--y:-110px;--d:.55s"></span>
         </div>
         <svg class="onb-checkmark" viewBox="0 0 80 80" fill="none"><circle class="sv-circle" cx="40" cy="40" r="36" stroke-width="1.5"/><path class="sv-check" d="M26 41.5l9.5 9.5L55 30" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        <h1>${words("You're set, " + esc(first) + '.', 0.5)}</h1>
-        <p class="onb-sub rv" style="--d:1.1s">Turing is tuned to you. No settings screens, no dials — the rest happens in the conversation.</p>
-        <a class="btn btn-primary rv onb-final-cta" style="--d:1.3s" href="/">Start a conversation <span class="arr">→</span></a>
+        <h1>${words(esc(T('finalT', { name: first })), 0.5)}</h1>
+        <p class="onb-sub rv" style="--d:1.1s">${esc(T('finalSub'))}</p>
+        <a class="btn btn-primary rv onb-final-cta" style="--d:1.3s" href="/">${esc(T('startConv'))} <span class="arr">→</span></a>
       </div>`;
   }
 
@@ -941,13 +1024,13 @@ async function onOnboard() {
       chk?.addEventListener('change', () => { sel.terms = chk.checked; next.disabled = !chk.checked; });
       next?.addEventListener('click', async () => {
         next.disabled = true;
-        next.innerHTML = '<span class="spinner"></span> Saving…';
+        next.innerHTML = `<span class="spinner"></span> ${esc(T('saving'))}`;
         try {
           await fetchJSON('/api/onboard', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ageBracket: sel.age, useCases: [...sel.usage], acceptedTerms: true }) });
           renderStep(5);
         } catch (e2) {
           next.disabled = false;
-          next.innerHTML = 'Finish setup <span class="arr">→</span>';
+          next.innerHTML = `${esc(T('finish'))} <span class="arr">→</span>`;
         }
       });
     }
@@ -957,51 +1040,32 @@ async function onOnboard() {
 }
 
 /* ---------- legal ---------- */
-const PRIVACY = [
-  ['What we collect', 'When you create an account we store your name and email address, and a hash of your password. When you use the product, your conversation content is processed to generate responses. When you write to support, we store your name, email, topic and message. We also keep basic technical data — such as the status history on this site — that the product needs to operate.'],
-  ['How we use it', [
-    'To provide the service: conversations are used to run conversations. Nothing else.',
-    'To reply to you: support messages are read by a person and answered by email.',
-    'Transactional email: account and password emails are sent through Resend. We do not send marketing email.',
-    'To keep things working: status history is generated from operational data and shown publicly.',
-  ]],
-  ['What we do not do', [
-    'We do not sell your data. There is no data broker in the loop, ever.',
-    'We do not run advertising. There is no tracking pixel, no ad network, no third-party analytics scripts on this site.',
-    'We do not cross conversations. Facts stated in one conversation are not used in another.',
-  ]],
-  ['Your data, your call', 'You can ask us to show you what we have on you, correct it, or delete your account entirely. The support page is the route — choose a topic, write the word "delete", and a person will take care of it.'],
-  ['Email provider', 'Transactional email (welcome, password reset, support replies) is delivered by Resend on our behalf. They process email addresses to deliver mail and nothing more.'],
-  ['Contact', 'Questions about this policy go to the support page. A person reads everything.'],
-];
-const TERMS = [
-  ['The service', 'Turing is a conversational AI product. It reasons over your questions, remembers what you tell it within a conversation, and answers directly. It is a tool for thinking, not a source of verified truth.'],
-  ['Accounts', 'You are responsible for the activity under your account and for keeping your password private. One person, one account. We may suspend accounts that are abused, and we will tell you why when we do.'],
-  ['Output', 'Turing generates answers. Answers can be wrong — any system that reasons can be wrong, and ours is no exception. Verify anything that matters: medical, legal, financial, safety-critical. The product states its own confidence when it can, and says "I don\'t know" when it should. Do not paste credentials, keys or private data into conversations.'],
-  ['Acceptable use', [
-    'No illegal use, no attempts to extract system prompts, no abuse that degrades the service for others.',
-    'No using the product to generate content you know to be harmful.',
-    'Automated scraping of this site is not permitted.',
-  ]],
-  ['Plans', 'The Free plan is free, indefinitely, as described on the pricing page. Other plans are in development and will be described fully before they launch. Nothing about an existing plan changes without notice to you.'],
-  ['Availability', 'We aim to be up and we show our 90-day record publicly on the status page. We do not guarantee uptime. If something breaks, it will appear there first.'],
-  ['Liability', 'The service is provided as is. To the maximum extent permitted by law, we are not liable for indirect or consequential damages arising from its use.'],
-  ['Changes', 'If these terms change materially, we will update this page and note the date above. Continued use after a change means you are fine with it.'],
-];
-function legalView(title, date, sections) {
+function privacySections() {
+  return [
+    [T('pr1t'), T('pr1b')], [T('pr2t'), T('pr2b')], [T('pr3t'), T('pr3b')],
+    [T('pr4t'), T('pr4b')], [T('pr5t'), T('pr5b')], [T('pr6t'), T('pr6b')],
+  ];
+}
+function termsSections() {
+  return [
+    [T('tm1t'), T('tm1b')], [T('tm2t'), T('tm2b')], [T('tm3t'), T('tm3b')], [T('tm4t'), T('tm4b')],
+    [T('tm5t'), T('tm5b')], [T('tm6t'), T('tm6b')], [T('tm7t'), T('tm7b')], [T('tm8t'), T('tm8b')],
+  ];
+}
+function legalView(title, sections) {
   return `
   <div class="legal">
-    <h1 class="rv">${title}</h1>
-    <p class="l-date rv" style="--d:.08s">Effective ${date}</p>
+    <h1 class="rv">${esc(title)}</h1>
+    <p class="l-date rv" style="--d:.08s">${esc(T('effective', { date: legalDate() }))}</p>
     <div class="body">${sections.map(([h, c], i) => {
       const d = (0.12 + i * 0.06).toFixed(2);
-      const body = Array.isArray(c) ? `<ul style="--d:${d}s">${c.map(x => `<li>${x}</li>`).join('')}</ul>` : `<p style="--d:${d}s">${c}</p>`;
-      return `<h2 style="--d:${d}s">${h}</h2>${body}`;
+      const body = Array.isArray(c) ? `<ul style="--d:${d}s">${c.map(x => `<li>${esc(x)}</li>`).join('')}</ul>` : `<p style="--d:${d}s">${esc(c)}</p>`;
+      return `<h2 style="--d:${d}s">${esc(h)}</h2>${body}`;
     }).join('')}</div>
   </div>`;
 }
-const viewPrivacy = () => legalView('Privacy', 'September 14, 2026', PRIVACY);
-const viewTerms = () => legalView('Terms of service', 'September 14, 2026', TERMS);
+const viewPrivacy = () => legalView(T('privacyTitle'), privacySections());
+const viewTerms = () => legalView(T('termsTitle'), termsSections());
 
 function viewNotFound() {
   return `
@@ -1010,9 +1074,9 @@ function viewNotFound() {
     <div class="nf-num">
       <span style="--i:0">4</span><span class="solid" style="--i:1">0</span><span style="--i:2">4</span>
     </div>
-    <h1 class="rv" style="--d:.2s">This page doesn't exist.</h1>
-    <p class="rv" style="--d:.3s">The link may be broken, or the page may have moved. Either way, the front door still works.</p>
-    <a class="btn btn-primary rv" style="--d:.4s" href="/">Back to home <span class="arr">→</span></a>
+    <h1 class="rv" style="--d:.2s">${esc(T('nfT'))}</h1>
+    <p class="rv" style="--d:.3s">${esc(T('nfB'))}</p>
+    <a class="btn btn-primary rv" style="--d:.4s" href="/">${esc(T('backHome'))} <span class="arr">→</span></a>
   </div>`;
 }
 
@@ -1020,9 +1084,9 @@ function viewMaintenance() {
   return `
   <div class="maint">
     <div class="m-ring"><i></i><i></i><i></i><span class="core"></span></div>
-    <h1 class="rv" style="--d:.15s">We're doing some work.</h1>
-    <p class="rv" style="--d:.25s">Turing is briefly in maintenance. Nothing is lost — your conversations are waiting. We'll be back shortly.</p>
-    <div class="m-foot rv-fade" style="--d:.4s">© 2026 TURING</div>
+    <h1 class="rv" style="--d:.15s">${esc(T('maintT'))}</h1>
+    <p class="rv" style="--d:.25s">${esc(T('maintB'))}</p>
+    <div class="m-foot rv-fade" style="--d:.4s">${esc(T('maintFoot'))}</div>
   </div>`;
 }
 
@@ -1051,7 +1115,7 @@ async function refreshSite() {
   renderAnnounce();
   if (state.site.maintenance && state.route !== 'maintenance') {
     state.route = 'maintenance';
-    document.title = 'Maintenance — Turing';
+    document.title = T('titleMaintenance');
     el('#siteHeader').innerHTML = '';
     el('#siteFooter').hidden = true;
     el('#page').innerHTML = VIEWS.maintenance.html();
@@ -1061,7 +1125,7 @@ async function refreshSite() {
 function renderRoute(path, { instant = false } = {}) {
   const route = matchRoute(String(path).split('?')[0]);
   state.route = route.view;
-  document.title = route.title;
+  document.title = T(route.titleKey);
   refreshSite();
   renderHeader();
   renderFooter();
@@ -1099,7 +1163,7 @@ async function boot() {
   renderAnnounce();
   if (state.site.maintenance) {
     state.route = 'maintenance';
-    document.title = 'Maintenance — Turing';
+    document.title = T('titleMaintenance');
     el('#siteHeader').innerHTML = '';
     el('#siteFooter').hidden = true;
     el('#page').innerHTML = VIEWS.maintenance.html();
