@@ -1,23 +1,22 @@
-/* ============ Turing — account page ============ */
+/* ============ Turing — account page (v3) ============ */
 'use strict';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 function esc(s) { return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c])); }
 function T(key, vars) { return TURING_I18N.t(lang, key, vars); }
-
-let lang = TURING_I18N.detectLang();
-document.documentElement.lang = lang;
-const locale = () => (lang === 'en' ? 'en-US' : lang);
-
-const state = { user: null, usage: null, plan: 'free' };
-
 async function fetchJSON(url, opts) {
   const r = await fetch(url, opts);
   const j = await r.json().catch(() => ({}));
   if (!r.ok) throw Object.assign(new Error(j.message || 'request failed'), { status: r.status, data: j });
   return j;
 }
+
+let lang = TURING_I18N.detectLang();
+document.documentElement.lang = lang;
+const locale = () => (lang === 'en' ? 'en-US' : lang);
+
+const state = { user: null, usage: null, plan: 'free', countedTo: -1 };
 
 /* ---------- i18n ---------- */
 function applyStaticI18n() {
@@ -49,7 +48,10 @@ $('#langBtn').addEventListener('click', e => {
   m.hidden = !m.hidden;
   $('#langBtn').setAttribute('aria-expanded', String(!m.hidden));
 });
-document.addEventListener('click', e => { if (!$('#langSwitch').contains(e.target)) $('#langMenu').hidden = true; });
+document.addEventListener('click', e => {
+  const sw = $('#langSwitch');
+  if (sw && !sw.contains(e.target)) $('#langMenu').hidden = true;
+});
 
 /* ---------- dynamic content ---------- */
 function fmtCountdown(iso) {
@@ -61,6 +63,23 @@ function fmtCountdown(iso) {
   const t = h > 0 ? `${h}h ${m}m` : `${m}m`;
   return T('accResets', { t });
 }
+function animateNumber(el, to) {
+  const from = state.countedTo < 0 ? 0 : state.countedTo;
+  state.countedTo = to;
+  if (from === to) { el.textContent = to; return; }
+  const dur = 650, t0 = performance.now();
+  const step = now => {
+    const p = Math.min(1, (now - t0) / dur);
+    const eased = 1 - Math.pow(1 - p, 3);
+    el.textContent = Math.round(from + (to - from) * eased);
+    if (p < 1) requestAnimationFrame(step);
+  };
+  requestAnimationFrame(step);
+}
+function planName() {
+  const p = String(state.plan || 'free').toLowerCase();
+  return p.charAt(0).toUpperCase() + p.slice(1);
+}
 function fillDynamic() {
   if (!state.user) return;
   const u = state.user;
@@ -69,26 +88,27 @@ function fillDynamic() {
   $('#accAva').textContent = (u.name || '?').trim().charAt(0).toUpperCase();
   $('#kvName').textContent = u.name;
   $('#kvEmail').textContent = u.email;
-  try {
-    $('#kvJoined').textContent = new Date(u.created).toLocaleDateString(locale(), { year: 'numeric', month: 'long', day: 'numeric' });
-  } catch { $('#kvJoined').textContent = u.created; }
+  let joined = u.created;
+  try { joined = new Date(u.created).toLocaleDateString(locale(), { year: 'numeric', month: 'long', day: 'numeric' }); } catch {}
+  $('#kvJoined').textContent = joined;
+  $('#kvJoined2').textContent = joined;
 
-  // plan (dynamic — admin can upgrade users)
-  const plan = String(state.plan || 'free').toLowerCase();
-  const badge = $('.plan-badge');
-  if (badge) badge.textContent = plan.charAt(0).toUpperCase() + plan.slice(1);
+  const pn = planName();
+  const chips = [$('#planChip'), $('#planBadge')];
+  chips.forEach(c => { if (c) c.textContent = pn; });
   const planBody = $('.card [data-i18n="accPlanDesc"]');
   const planNote = $('.card [data-i18n="accPlanNote"]');
-  if (planBody) planBody.textContent = plan === 'free' ? T('accPlanDesc') : T('accPlanOn', { p: plan.charAt(0).toUpperCase() + plan.slice(1) });
-  if (planNote) planNote.style.display = plan === 'free' ? '' : 'none';
+  const isFree = String(state.plan || 'free').toLowerCase() === 'free';
+  if (planBody) planBody.textContent = isFree ? T('accPlanDesc') : T('accPlanOn', { p: pn });
+  if (planNote) planNote.style.display = isFree ? '' : 'none';
 
   const usage = state.usage;
   if (usage) {
-    $('#uUsed').textContent = usage.used;
+    animateNumber($('#uUsed'), usage.used);
     $('#uLimit').textContent = usage.limit;
     const pct = Math.min(100, Math.round((usage.used / usage.limit) * 100));
     const fill = $('#uFill');
-    fill.style.width = pct + '%';
+    requestAnimationFrame(() => { fill.style.width = pct + '%'; });
     fill.classList.toggle('warn', pct >= 60 && pct < 100);
     fill.classList.toggle('full', pct >= 100);
     $('#uResets').textContent = usage.used > 0 ? fmtCountdown(usage.resetsAt) : '';
@@ -96,42 +116,38 @@ function fillDynamic() {
   }
 }
 
-/* ---------- sign out / delete ---------- */
+/* ---------- actions ---------- */
 $('#signOutBtn').addEventListener('click', async () => {
   try { await fetchJSON('/api/auth/logout', { method: 'POST' }); } catch {}
-  location.replace('/login');
+  if (window.Veil) Veil.go('/login'); else location.replace('/login');
 });
 $('#deleteBtn').addEventListener('click', () => { $('#delModal').hidden = false; });
 $('#delCancel').addEventListener('click', () => { $('#delModal').hidden = true; });
+$('#delModal').addEventListener('click', e => { if (e.target === $('#delModal')) $('#delModal').hidden = true; });
 $('#delConfirm').addEventListener('click', async e => {
   const btn = e.currentTarget;
   btn.disabled = true;
   try {
     await fetchJSON('/api/account/delete', { method: 'POST' });
-    location.replace('/');
+    if (window.Veil) Veil.go('/'); else location.replace('/');
   } catch {
     btn.disabled = false;
     $('#delModal').hidden = true;
   }
 });
 
-/* ---------- change password ---------- */
 $('#passForm').addEventListener('submit', async e => {
   e.preventDefault();
   const msg = $('#passMsg');
   const cur = $('#p-cur').value, n1 = $('#p-new').value, n2 = $('#p-new2').value;
   msg.hidden = true;
-  if (n1 !== n2 || n1.length < 8) {
-    msg.textContent = n1.length < 8 ? T('accPassShort') : T('accPassWrong');
-    msg.className = 'form-msg err'; msg.hidden = false;
-    return;
-  }
+  if (n1.length < 8) { msg.textContent = T('accPassShort'); msg.className = 'form-msg err'; msg.hidden = false; return; }
+  if (n1 !== n2) { msg.textContent = T('accPassWrong'); msg.className = 'form-msg err'; msg.hidden = false; return; }
   const btn = e.target.querySelector('button[type=submit]');
   btn.disabled = true;
   try {
     await fetchJSON('/api/auth/password', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ current: cur, password: n1 }) });
-    msg.textContent = T('accPassOk');
-    msg.className = 'form-msg ok'; msg.hidden = false;
+    msg.textContent = T('accPassOk'); msg.className = 'form-msg ok'; msg.hidden = false;
     e.target.reset();
   } catch (err) {
     msg.textContent = err.data && err.data.error === 'wrong_password' ? T('accPassWrong') : T('accPassShort');
@@ -153,11 +169,11 @@ $('#passForm').addEventListener('submit', async e => {
   state.user = data.user;
   state.usage = data.usage;
   state.plan = data.plan || 'free';
+
   applyStaticI18n();
   buildLangMenu();
   $('#accShell').hidden = false;
   requestAnimationFrame(() => $('#accShell').classList.add('ready'));
   if (window.Veil) Veil.hide();
-  // live countdown refresh
-  setInterval(fillDynamic, 30000);
+  setInterval(fillDynamic, 30000); // live countdown
 })();

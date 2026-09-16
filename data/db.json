@@ -416,6 +416,50 @@
   },
   "activity": [
     {
+      "at": "2026-09-16T11:49:00.101Z",
+      "text": "User deleted by admin: SSE Check <sse@test.io>"
+    },
+    {
+      "at": "2026-09-16T11:49:00.062Z",
+      "text": "Admin login"
+    },
+    {
+      "at": "2026-09-16T11:48:59.944Z",
+      "text": "Onboarding completed: SSE Check"
+    },
+    {
+      "at": "2026-09-16T11:48:59.934Z",
+      "text": "New user registered: SSE Check <sse@test.io>"
+    },
+    {
+      "at": "2026-09-16T11:48:30.158Z",
+      "text": "User deleted by admin: Dom Tester <dom_1789559284297@test.io>"
+    },
+    {
+      "at": "2026-09-16T11:48:30.151Z",
+      "text": "User deleted by admin: Dom Tester <dom_1789559282635@test.io>"
+    },
+    {
+      "at": "2026-09-16T11:48:30.109Z",
+      "text": "Admin login"
+    },
+    {
+      "at": "2026-09-16T11:48:04.403Z",
+      "text": "Onboarding completed: Dom Tester"
+    },
+    {
+      "at": "2026-09-16T11:48:04.392Z",
+      "text": "New user registered: Dom Tester <dom_1789559284297@test.io>"
+    },
+    {
+      "at": "2026-09-16T11:48:02.754Z",
+      "text": "Onboarding completed: Dom Tester"
+    },
+    {
+      "at": "2026-09-16T11:48:02.746Z",
+      "text": "New user registered: Dom Tester <dom_1789559282635@test.io>"
+    },
+    {
       "at": "2026-09-15T22:04:50.291Z",
       "text": "Admin login"
     },
