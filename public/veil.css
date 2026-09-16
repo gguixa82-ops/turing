@@ -1,0 +1,29 @@
+/* ============ Turing — pantalla de carga entre páginas (v2) ============
+   Ligera a propósito: fade rápido (~0,2 s), sin retener la navegación.
+   La página carga DETRÁS del veil (el markup empieza con class "on") y la
+   app lo quita cuando está lista llamando a TuringVeil.hide(). */
+.veil {
+  position: fixed; inset: 0; z-index: 300; background: #0A0A0A;
+  display: grid; place-items: center;
+  opacity: 1; transition: opacity .22s ease;
+}
+.veil:not(.on) { opacity: 0; pointer-events: none; }
+.veil-inner { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.veil-word {
+  font-family: 'Inter', -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
+  font-size: clamp(26px, 3.6vw, 38px); font-weight: 700; letter-spacing: -0.03em; color: #F5F5F5;
+}
+.veil.on .veil-word { animation: veilWord .4s cubic-bezier(.22,1,.36,1) both; }
+@keyframes veilWord { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.veil-bar { width: 96px; height: 2px; border-radius: 2px; background: rgba(255,255,255,0.12); overflow: hidden; }
+.veil-bar i {
+  display: block; width: 40%; height: 100%; border-radius: 2px; background: #F5F5F5;
+  animation: veilSlide .9s ease-in-out infinite; animation-play-state: paused;
+}
+.veil.on .veil-bar i { animation-play-state: running; }
+@keyframes veilSlide { from { transform: translateX(-110%); } to { transform: translateX(280%); } }
+@media (prefers-reduced-motion: reduce) {
+  .veil { transition: none; }
+  .veil.on .veil-word { animation: none; }
+  .veil-bar i { animation: none; }
+}

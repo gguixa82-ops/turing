@@ -173,6 +173,6 @@ $('#passForm').addEventListener('submit', async e => {
   applyStaticI18n();
   buildLangMenu();
   $('#accShell').hidden = false;
-  requestAnimationFrame(() => $('#accShell').classList.add('ready'));
+  if (window.TuringVeil) TuringVeil.hide();
   setInterval(fillDynamic, 30000); // live countdown
 })();

@@ -1,6 +1,8 @@
 /* ============ Turing — SPA (i18n, 11 languages) ============ */
 'use strict';
 
+window.__TURING_ROUTER = true; // veil.js no intercepta enlaces aquí: el enrutado es nuestro
+
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const el = s => $(s);
@@ -108,10 +110,13 @@ function wireLangSwitch(scope = document) {
   }));
 }
 
-/* ---------- navigation (instant: no artificial waits) ---------- */
+/* ---------- navigation (velo de carga rápido entre páginas) ---------- */
 function withTransition(fn) {
-  // antigua pantalla de carga eliminada: las rutas se pintan al instante
-  return Promise.resolve().then(fn);
+  if (reducedMotion || !window.TuringVeil) return Promise.resolve().then(fn);
+  return window.TuringVeil.show()
+    .then(() => Promise.resolve().then(fn))
+    .catch(() => {})
+    .finally(() => window.TuringVeil.hide());
 }
 
 /* ---------- router ---------- */
@@ -150,11 +155,12 @@ document.addEventListener('click', e => {
   const href = a.getAttribute('href');
   if (!href || !href.startsWith('/') || href.startsWith('//')) return;
   if (a.target === '_blank' || a.hasAttribute('download')) return;
-  // standalone pages (ia.html / account.html …) navigate natively, instantly
+  // standalone pages (ia.html / account.html …): native navigation behind the veil
   if (/\/[^/]*\.[a-z0-9]+$/i.test(href)) {
     e.preventDefault();
     closeMobileMenu();
-    location.assign(href);
+    if (reducedMotion || !window.TuringVeil) { location.assign(href); return; }
+    window.TuringVeil.show().then(() => location.assign(href));
     return;
   }
   e.preventDefault();
@@ -1185,8 +1191,13 @@ async function boot() {
     el('#siteHeader').innerHTML = '';
     el('#siteFooter').hidden = true;
     el('#page').innerHTML = VIEWS.maintenance.html();
+    if (window.TuringVeil) TuringVeil.hide();
     return;
   }
-  renderRoute(location.pathname);
+  try {
+    await renderRoute(location.pathname);
+  } finally {
+    if (window.TuringVeil) TuringVeil.hide();
+  }
 }
 boot();

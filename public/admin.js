@@ -748,4 +748,5 @@ async function renderSite() {
   } catch {
     showLogin();
   }
+  if (window.TuringVeil) TuringVeil.hide();
 })();

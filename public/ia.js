@@ -62,14 +62,33 @@ document.addEventListener('click', e => {
 });
 
 /* ---------- markdown (small, safe) ---------- */
+/* Los modelos suelen partir la prosa con saltos de línea blandos; el markdown los
+   trataría como saltos duros ("Buenos\ndias" → dos líneas). Colapsamos los saltos
+   de líneas de prosa consecutivas a espacios, respetando títulos, listas, citas,
+   tablas, reglas y bloques de código. */
+function softBreaks(t) {
+  const structural = s => /^\s*(#{1,6}\s|[-*+]\s|\d+[.)]\s|>|```|---|\|)/.test(s);
+  const lines = t.split('\n');
+  let out = '';
+  for (let i = 0; i < lines.length; i++) {
+    const cur = lines[i], next = lines[i + 1];
+    out += cur;
+    if (next === undefined) break;
+    const keepBreak = cur.trim() === '' || next.trim() === '' || structural(cur) || structural(next);
+    out += keepBreak ? '\n' : ' ';
+  }
+  return out;
+}
+
 function mdToHtml(src, live = false) {
-  let text = src;
+  let text = String(src == null ? '' : src).replace(/\r\n?/g, '\n');
   if (live && (text.match(/```/g) || []).length % 2 === 1) text += '\n```';
   const blocks = [];
   text = text.replace(/```([\w+#-]*)[^\S\n]*\n([\s\S]*?)```/g, (m, lg, code) => {
     blocks.push({ lang: lg || 'code', code: code.replace(/\n$/, '') });
     return `\u0000B${blocks.length - 1}\u0000`;
   });
+  text = softBreaks(text);
   let h = esc(text);
   h = h.replace(/`([^`\n]+)`/g, '<code class="inline">$1</code>');
   h = h.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
@@ -511,8 +530,7 @@ $('#scrim').addEventListener('click', closeSideMobile);
   renderMain();
 
   $('#iaShell').hidden = false;
-  requestAnimationFrame(() => $('#iaShell').classList.add('ready'));
-  if (window.Veil) Veil.hide();
+  if (window.TuringVeil) TuringVeil.hide();
   grow();
   input.focus();
 })();
