@@ -108,33 +108,10 @@ function wireLangSwitch(scope = document) {
   }));
 }
 
-/* ---------- transition overlay (loading screen) ---------- */
-let transitioning = false;
-const LOAD_MIN = 520;   // tiempo mínimo que se ve la pantalla de carga (ms)
-const LOAD_MAX = 4000;  // tope de espera por contenido asíncrono (ms)
+/* ---------- navigation (instant: no artificial waits) ---------- */
 function withTransition(fn) {
-  if (reducedMotion) { Promise.resolve().then(fn); return; }
-  if (transitioning) { setTimeout(() => withTransition(fn), 120); return; }
-  transitioning = true;
-  const t = el('#transition');
-  t.classList.remove('leaving');
-  t.classList.add('active');
-  const leave = () => requestAnimationFrame(() => {
-    t.classList.add('leaving');
-    setTimeout(() => { t.classList.remove('active', 'leaving'); transitioning = false; }, 580);
-  });
-  setTimeout(async () => {
-    const started = Date.now();
-    try {
-      await Promise.race([
-        Promise.resolve().then(fn),
-        new Promise(r => setTimeout(r, LOAD_MAX)),
-      ]);
-    } catch {}
-    const wait = LOAD_MIN - (Date.now() - started);
-    if (wait > 0) await new Promise(r => setTimeout(r, wait));
-    leave();
-  }, 470);
+  // antigua pantalla de carga eliminada: las rutas se pintan al instante
+  return Promise.resolve().then(fn);
 }
 
 /* ---------- router ---------- */
@@ -173,15 +150,11 @@ document.addEventListener('click', e => {
   const href = a.getAttribute('href');
   if (!href || !href.startsWith('/') || href.startsWith('//')) return;
   if (a.target === '_blank' || a.hasAttribute('download')) return;
-  // standalone pages (ia.html / account.html …) navigate natively, behind the loading screen
+  // standalone pages (ia.html / account.html …) navigate natively, instantly
   if (/\/[^/]*\.[a-z0-9]+$/i.test(href)) {
     e.preventDefault();
     closeMobileMenu();
-    if (reducedMotion) { location.assign(href); return; }
-    const t = el('#transition');
-    t.classList.remove('leaving');
-    t.classList.add('active');
-    setTimeout(() => location.assign(href), 540);
+    location.assign(href);
     return;
   }
   e.preventDefault();
@@ -386,10 +359,8 @@ async function fillResearch(append) {
 function loadMoreResearch() {
   const btn = el('#loadMore');
   if (btn) btn.disabled = true;
-  window.scrollTo({ top: 0, behavior: 'smooth' });
-  setTimeout(() => {
-    withTransition(() => fillResearch(true));
-  }, 420);
+  window.scrollTo(0, 0);
+  fillResearch(true);
 }
 
 async function viewResearchPost(slug) {

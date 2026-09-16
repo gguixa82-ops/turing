@@ -119,7 +119,7 @@ function fillDynamic() {
 /* ---------- actions ---------- */
 $('#signOutBtn').addEventListener('click', async () => {
   try { await fetchJSON('/api/auth/logout', { method: 'POST' }); } catch {}
-  if (window.Veil) Veil.go('/login'); else location.replace('/login');
+  location.replace('/login');
 });
 $('#deleteBtn').addEventListener('click', () => { $('#delModal').hidden = false; });
 $('#delCancel').addEventListener('click', () => { $('#delModal').hidden = true; });
@@ -129,7 +129,7 @@ $('#delConfirm').addEventListener('click', async e => {
   btn.disabled = true;
   try {
     await fetchJSON('/api/account/delete', { method: 'POST' });
-    if (window.Veil) Veil.go('/'); else location.replace('/');
+    location.replace('/');
   } catch {
     btn.disabled = false;
     $('#delModal').hidden = true;
@@ -174,6 +174,5 @@ $('#passForm').addEventListener('submit', async e => {
   buildLangMenu();
   $('#accShell').hidden = false;
   requestAnimationFrame(() => $('#accShell').classList.add('ready'));
-  if (window.Veil) Veil.hide();
   setInterval(fillDynamic, 30000); // live countdown
 })();

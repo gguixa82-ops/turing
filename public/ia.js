@@ -115,8 +115,8 @@ function renderSide() {
     list.innerHTML = `<div class="side-empty"><div class="se-t">${esc(T('iaNoChats'))}</div><div class="se-b">${esc(T('iaNoChatsB'))}</div></div>`;
     return;
   }
-  list.innerHTML = state.chats.map((c, i) => `
-    <button class="chat-item ${c.id === state.activeId ? 'sel' : ''}" data-id="${c.id}" style="animation-delay:${Math.min(i * 0.03, 0.3)}s">
+  list.innerHTML = state.chats.map(c => `
+    <button class="chat-item ${c.id === state.activeId ? 'sel' : ''}" data-id="${c.id}">
       <span class="ci-title">${esc(c.title)}</span>
       <span class="ci-sub">${c.preview ? esc(c.preview) : fmtWhen(c.updated)}</span>
       <span class="ci-acts">
@@ -352,12 +352,15 @@ async function send() {
   setStreaming(true);
   abortCtrl = new AbortController();
   let acc = '';
-  let raf = 0;
+  let paintTimer = 0;
+  const PAINT_MS = 70; // repinta como máximo ~14 veces/s: texto fluido y hilo principal ligero
   const paintLive = () => {
-    raf = 0;
+    paintTimer = 0;
     contentEl.innerHTML = mdToHtml(acc, true) + '<span class="cursor"></span>';
     scrollBottom(false);
   };
+  const queuePaint = () => { if (!paintTimer) paintTimer = setTimeout(paintLive, PAINT_MS); };
+  const stopPaint = () => { if (paintTimer) { clearTimeout(paintTimer); paintTimer = 0; } };
 
   try {
     const resp = await fetch(`/api/chats/${state.activeId}/messages`, {
@@ -391,18 +394,19 @@ async function send() {
         let ev; try { ev = JSON.parse(line.slice(5)); } catch { continue; }
         if (ev.title) {
           const c = state.chats.find(x => x.id === state.activeId);
+          const changed = !c || c.title !== ev.title;
           if (c) { c.title = ev.title; c.preview = text; }
           if (state.activeChat) state.activeChat.title = ev.title;
-          renderSide();
+          if (changed) renderSide();
         }
         if (ev.content) {
           acc += ev.content;
-          if (!raf) raf = requestAnimationFrame(paintLive);
+          queuePaint();
         }
         if (ev.error) upstreamErr = true;
       }
     }
-    if (raf) cancelAnimationFrame(raf);
+    stopPaint();
     const msg = contentEl.closest('.msg');
     if (upstreamErr) {
       if (msg) msg.remove();
@@ -414,7 +418,7 @@ async function send() {
       appendError(T('iaErrGeneric'));
     }
   } catch (e) {
-    if (raf) cancelAnimationFrame(raf);
+    stopPaint();
     if (e.name === 'AbortError') {
       if (acc) finalizeAssistant(contentEl, acc);
       else { const msg = contentEl.closest('.msg'); if (msg) msg.remove(); }
