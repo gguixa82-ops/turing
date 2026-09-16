@@ -66,7 +66,142 @@ $('#aNav').addEventListener('click', e => {
 function openSection(sec) {
   state.section = sec;
   $$('#aNav button').forEach(b => b.classList.toggle('active', b.dataset.sec === sec));
-  ({ overview: renderOverview, support: renderSupport, status: renderStatus, site: renderSite })[sec]();
+  ({ overview: renderOverview, support: renderSupport, users: renderUsers, status: renderStatus, ai: renderAI, site: renderSite })[sec]();
+}
+
+/* ---------- AI (Groq) ---------- */
+const GROQ_MODELS = [
+  { id: 'llama-3.3-70b-versatile', label: 'Llama 3.3 70B Versatile — best all-round' },
+  { id: 'openai/gpt-oss-120b', label: 'GPT-OSS 120B — strong reasoning' },
+  { id: 'openai/gpt-oss-20b', label: 'GPT-OSS 20B — fast & light' },
+  { id: 'meta-llama/llama-4-maverick-17b-128e-instruct', label: 'Llama 4 Maverick 17B — large MoE' },
+  { id: 'meta-llama/llama-4-scout-17b-16e-instruct', label: 'Llama 4 Scout 17B — efficient MoE' },
+  { id: 'qwen/qwen3-32b', label: 'Qwen3 32B' },
+  { id: 'moonshotai/kimi-k2-instruct-0905', label: 'Kimi K2 Instruct' },
+  { id: 'deepseek-r1-distill-llama-70b', label: 'DeepSeek R1 Distill 70B — deep reasoning' },
+  { id: 'llama-3.1-8b-instant', label: 'Llama 3.1 8B Instant — cheapest / fastest' },
+];
+
+async function renderAI() {
+  const main = $('#aMain');
+  main.innerHTML = `<div class="sec" style="opacity:0"><div class="a-head"><h1>Loading…</h1></div></div>`;
+  let ai;
+  try { ai = (await api('/api/admin/ai')).ai; } catch { return; }
+  const known = GROQ_MODELS.some(m => m.id === ai.model);
+  const options = GROQ_MODELS.map(m =>
+    `<option value="${esc(m.id)}" ${m.id === ai.model ? 'selected' : ''}>${esc(m.label)}</option>`).join('');
+  main.innerHTML = `
+  <div class="sec">
+    <div class="a-head"><div><h1>AI</h1><div class="a-sub">The model behind <b style="color:var(--text)">/ia.html</b>. Groq API key, model and usage limits.</div></div>
+      <span class="ai-status ${ai.hasKey ? 'ok' : 'warn'}">${ai.hasKey ? '<span class="dot"></span>Configured' : '<span class="dot"></span>Needs an API key'}</span>
+    </div>
+
+    <div class="ai-grid">
+      <div class="card">
+        <h3>Model</h3>
+        <div class="field" style="margin:0 0 12px"><label for="aiModel">Groq model</label>
+          <select id="aiModel">
+            ${options}
+            <option value="__custom" ${known ? '' : 'selected'}>Custom / other model id…</option>
+          </select>
+        </div>
+        <div class="field" id="aiCustomWrap" style="margin:0;${known ? 'display:none' : ''}"><label for="aiCustom">Custom model id</label>
+          <input id="aiCustom" value="${known ? '' : esc(ai.model)}" placeholder="e.g. mistral-saba-24b"></div>
+        <p class="ai-hint">Any Groq chat-completions model id works. The list covers the current catalog.</p>
+      </div>
+
+      <div class="card">
+        <h3>Usage limit <span class="ai-tag">not shown on the chat page</span></h3>
+        <div class="row-2">
+          <div class="field" style="margin:0"><label for="aiLimMsgs">Messages per window</label>
+            <input id="aiLimMsgs" type="number" min="1" max="500" value="${ai.limitMessages}"></div>
+          <div class="field" style="margin:0"><label for="aiLimHours">Window (hours)</label>
+            <input id="aiLimHours" type="number" min="1" max="72" value="${ai.limitWindowHours}"></div>
+        </div>
+        <p class="ai-hint">Rolling window per user. Default is <b style="color:var(--text)">15 messages every 6 hours</b>. Users only see a gentle "try again later" — never the numbers.</p>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <h3>Groq API key</h3>
+      <div class="ai-key-row">
+        <div class="pw-wrap" style="flex:1"><input id="aiKey" type="password" autocomplete="new-password" placeholder="${ai.hasKey ? 'Saved key: ' + esc(ai.keyMasked) + ' — paste a new one to replace' : 'gsk_…'}"><button type="button" class="pw-toggle" data-target="aiKey">Show</button></div>
+        <button class="btn btn-ghost btn-sm" id="aiClearKey" ${ai.hasKey ? '' : 'disabled'}>Remove key</button>
+      </div>
+      <p class="ai-hint">Create a free key at <a href="https://console.groq.com/keys" target="_blank" rel="noopener" style="color:var(--text);text-decoration:underline">console.groq.com/keys</a>. It is stored on the server and never sent to the browser.</p>
+      <div class="ai-actions">
+        <button class="btn btn-primary btn-sm" id="aiSave">Save configuration <span style="opacity:.6">→</span></button>
+        <button class="btn btn-ghost btn-sm" id="aiTest">Test connection</button>
+        <span class="ai-test-result" id="aiTestResult"></span>
+      </div>
+    </div>
+
+    <div class="card" style="margin-top:14px">
+      <h3>System prompt <span class="ai-tag">optional</span></h3>
+      <div class="field" style="margin:0"><textarea id="aiSys" style="min-height:90px" maxlength="1200" placeholder="Leave empty to use Turing's default personality…">${esc(ai.systemPrompt || '')}</textarea></div>
+      <p class="ai-hint">Overrides the built-in assistant personality for every conversation.</p>
+    </div>
+  </div>`;
+
+  const modelSel = $('#aiModel');
+  modelSel.addEventListener('change', () => {
+    $('#aiCustomWrap').style.display = modelSel.value === '__custom' ? '' : 'none';
+  });
+  bindPwTogglesAI();
+
+  function currentModel() {
+    return modelSel.value === '__custom' ? $('#aiCustom').value.trim() : modelSel.value;
+  }
+  $('#aiSave').addEventListener('click', async () => {
+    const model = currentModel();
+    if (!model) { toast('Choose or type a model id', true); return; }
+    const key = $('#aiKey').value.trim();
+    const body = {
+      model,
+      limitMessages: parseInt($('#aiLimMsgs').value, 10) || 15,
+      limitWindowHours: parseInt($('#aiLimHours').value, 10) || 6,
+      systemPrompt: $('#aiSys').value,
+    };
+    if (key) body.apiKey = key;
+    try {
+      await post('/api/admin/ai', body);
+      toast('AI configuration saved');
+      renderAI();
+    } catch { toast('Failed to save', true); }
+  });
+  $('#aiClearKey').addEventListener('click', async () => {
+    try {
+      await post('/api/admin/ai', { apiKey: '' });
+      toast('API key removed');
+      renderAI();
+    } catch { toast('Failed', true); }
+  });
+  $('#aiTest').addEventListener('click', async e => {
+    const btn = e.currentTarget;
+    const res = $('#aiTestResult');
+    const model = currentModel();
+    if (model && model !== ai.model) await post('/api/admin/ai', { model }).catch(() => {});
+    btn.disabled = true;
+    res.className = 'ai-test-result';
+    res.textContent = 'Testing…';
+    try {
+      const r = await post('/api/admin/ai-test', {});
+      res.className = 'ai-test-result ' + (r.ok ? 'ok' : 'bad');
+      res.textContent = r.ok ? '✓ ' + r.detail : '✗ ' + r.detail;
+    } catch {
+      res.className = 'ai-test-result bad';
+      res.textContent = '✗ Request failed';
+    } finally { btn.disabled = false; }
+  });
+}
+function bindPwTogglesAI() {
+  $$('.pw-toggle').forEach(b => b.addEventListener('click', () => {
+    const inp = $('#' + b.dataset.target);
+    if (!inp) return;
+    const show = inp.type === 'password';
+    inp.type = show ? 'text' : 'password';
+    b.textContent = show ? 'Hide' : 'Show';
+  }));
 }
 
 /* ---------- overview ---------- */
@@ -133,20 +268,24 @@ async function refreshBadge() {
 }
 
 /* ---------- support ---------- */
+const TOPIC_CLASS = { 'General': 't-gen', 'Bug report': 't-bug', 'Feature request': 't-feat', 'API access': 't-api', 'Billing': 't-bill', 'Other': 't-gen' };
 async function renderSupport() {
   const main = $('#aMain');
   main.innerHTML = `<div class="sec" style="opacity:0"><div class="a-head"><h1>Loading…</h1></div></div>`;
   try { state.support = (await api('/api/admin/support')).messages; } catch { return; }
   if (!state.selected || !state.support.find(m => m.id === state.selected)) state.selected = state.support[0]?.id || null;
   const list = state.support.map(m => {
-    const hasActivity = (m.replies?.length || 0) > 0;
+    const nReplies = (m.replies?.length || 0);
     return `
     <button class="sup-item ${m.id === state.selected ? 'sel' : ''} ${m.read ? '' : 'unread'}" data-id="${m.id}">
-      ${m.resolved ? '<span class="si-res">RESOLVED</span>' : ''}
-      ${!m.read && hasActivity ? '<span class="si-new">NEW</span>' : ''}
-      <div class="si-top"><span class="si-name">${esc(m.name)}</span><span class="si-topic">${esc(m.topic)}</span></div>
+      <div class="si-top">
+        ${!m.read ? '<span class="si-dot" title="Unread"></span>' : ''}
+        <span class="si-name">${esc(m.name)}</span>
+        <span class="si-topic ${TOPIC_CLASS[m.topic] || 't-gen'}">${esc(m.topic)}</span>
+        ${m.resolved ? '<span class="si-res">RESOLVED</span>' : ''}
+      </div>
       <div class="si-msg">${esc(m.message)}</div>
-      <div class="si-date">${fullDate(m.created)}</div>
+      <div class="si-date">${fullDate(m.created)}${nReplies ? ` · ${nReplies} repl${nReplies === 1 ? 'y' : 'ies'}` : ''}</div>
     </button>`;
   }).join('');
   const m = state.support.find(x => x.id === state.selected);
@@ -156,7 +295,13 @@ async function renderSupport() {
   ].sort((a, b) => new Date(a.at) - new Date(b.at)) : [];
   const detail = m ? `
     <div class="sd-head">
-      <div><div class="sd-name">${esc(m.name)}</div><div class="sd-mail">${esc(m.email)} · ${esc(m.topic)} · ${fullDate(m.created)}</div></div>
+      <span class="sd-avatar">${esc(m.name.trim().charAt(0).toUpperCase() || '?')}</span>
+      <div class="sd-id">
+        <div class="sd-name">${esc(m.name)}</div>
+        <div class="sd-mail"><a href="mailto:${esc(m.email)}">${esc(m.email)}</a></div>
+      </div>
+      <span class="si-topic ${TOPIC_CLASS[m.topic] || 't-gen'}">${esc(m.topic)}</span>
+      <span class="sd-date">${fullDate(m.created)}</span>
       <div class="sd-actions">
         <button class="btn btn-ghost btn-sm" data-act="${m.read ? 'unread' : 'read'}">${m.read ? 'Mark unread' : 'Mark read'}</button>
         <button class="btn ${m.resolved ? 'btn-ghost' : 'btn-primary'} btn-sm" data-act="${m.resolved ? 'reopen' : 'resolve'}">${m.resolved ? 'Reopen' : 'Resolve'}</button>
@@ -209,17 +354,149 @@ async function renderSupport() {
   });
 }
 
+/* ---------- users ---------- */
+const PLANS = ['free', 'maker', 'expert', 'core', 'enterprise'];
+
+async function renderUsers() {
+  const main = $('#aMain');
+  main.innerHTML = `<div class="sec" style="opacity:0"><div class="a-head"><h1>Loading…</h1></div></div>`;
+  let d;
+  try { d = await api('/api/admin/users'); } catch { return; }
+  state.users = d.users;
+  state.globalLimit = d.globalLimit;
+  state.globalWindow = d.globalWindowHours;
+  main.innerHTML = `
+  <div class="sec">
+    <div class="a-head"><div><h1>Users</h1><div class="a-sub">${d.users.length} registered · global limit <b style="color:var(--text)">${d.globalLimit} messages / ${d.globalWindowHours}h</b> (overridable per user below).</div></div></div>
+    ${d.users.length
+      ? `<div class="usr-list">${d.users.map((u, i) => usrCard(u, i)).join('')}</div>`
+      : '<div class="empty-state" style="min-height:300px"><span class="e-ic">◔</span><div>No users registered yet.</div></div>'}
+  </div>`;
+
+  $$('.usr-card', main).forEach(card => {
+    const id = card.dataset.uid;
+    const u = state.users.find(x => x.id === id);
+    card.querySelector('[data-uact="saveinfo"]').addEventListener('click', async () => {
+      const name = card.querySelector('.usr-name').value.trim();
+      const email = card.querySelector('.usr-email').value.trim();
+      if (name === u.name && email === u.email) return;
+      try { await post(`/api/admin/users/${id}`, { op: 'info', name, email }); toast('User info updated'); }
+      catch (ex) { toast(ex.data?.message || 'Failed to update', true); }
+      renderUsers();
+    });
+    card.querySelector('.usr-plan').addEventListener('change', async e => {
+      try { await post(`/api/admin/users/${id}`, { op: 'plan', plan: e.target.value }); toast(`Plan → ${e.target.value}`); }
+      catch { toast('Failed', true); }
+      renderUsers();
+    });
+    card.querySelector('[data-uact="savelimit"]').addEventListener('click', async () => {
+      const raw = card.querySelector('.usr-limit').value.trim();
+      try {
+        await post(`/api/admin/users/${id}`, { op: 'limit', limitMessages: raw === '' ? null : parseInt(raw, 10) });
+        toast(raw === '' ? 'Limit cleared — global applies' : `Limit set to ${raw}`);
+      } catch (ex) { toast(ex.data?.message || 'Failed', true); }
+      renderUsers();
+    });
+    card.querySelector('[data-uact="resetusage"]').addEventListener('click', async () => {
+      try { await post(`/api/admin/users/${id}`, { op: 'resetUsage' }); toast('Usage counter reset'); } catch { toast('Failed', true); }
+      renderUsers();
+    });
+    card.querySelector('[data-uact="ban"]').addEventListener('click', async () => {
+      try { await post(`/api/admin/users/${id}`, { op: 'ban', banned: !u.banned }); toast(u.banned ? 'User unbanned' : 'User banned — access revoked', true); }
+      catch { toast('Failed', true); }
+      renderUsers();
+    });
+    card.querySelector('[data-uact="delete"]').addEventListener('click', async () => {
+      if (!confirm(`Delete "${u.name}" permanently? Their chats and usage will be erased.`)) return;
+      try { await post(`/api/admin/users/${id}`, { op: 'delete' }); toast('User deleted'); } catch { toast('Failed', true); }
+      renderUsers();
+    });
+  });
+}
+function usrCard(u, i) {
+  const initial = (u.name || '?').trim().charAt(0).toUpperCase() || '?';
+  return `
+  <div class="usr-card ${u.banned ? 'banned' : ''}" data-uid="${u.id}" style="--i:${i}">
+    <div class="usr-top">
+      <span class="usr-avatar">${esc(initial)}</span>
+      <div class="usr-idwrap">
+        <div class="usr-idrow">
+          <input class="usr-name" value="${esc(u.name)}" maxlength="60">
+          <span class="usr-plan-badge p-${u.plan}">${esc(u.plan.toUpperCase())}</span>
+          ${u.banned ? '<span class="usr-flag">BANNED</span>' : ''}
+        </div>
+        <input class="usr-email" value="${esc(u.email)}" maxlength="120">
+      </div>
+      <button class="btn btn-ghost btn-sm" data-uact="saveinfo">Save info</button>
+    </div>
+    <div class="usr-meta">
+      Joined ${fullDate(u.created)} · Last login ${u.lastLogin ? fullDate(u.lastLogin) : 'never'} · ${u.chats} chat${u.chats === 1 ? '' : 's'} · <b>${u.usage.used}/${u.usage.limit}</b> messages in current window
+    </div>
+    <div class="usr-controls">
+      <div class="uc-field"><label>Plan</label>
+        <select class="usr-plan">${PLANS.map(pl => `<option value="${pl}" ${pl === u.plan ? 'selected' : ''}>${pl.charAt(0).toUpperCase() + pl.slice(1)}</option>`).join('')}</select>
+      </div>
+      <div class="uc-field"><label>Message limit</label>
+        <input class="usr-limit" type="number" min="1" max="10000" value="${u.limitMessages ?? ''}" placeholder="Global (${state.globalLimit})">
+      </div>
+      <button class="btn btn-ghost btn-sm" data-uact="savelimit">Apply limit</button>
+      <button class="btn btn-ghost btn-sm" data-uact="resetusage">Reset usage</button>
+      <span class="uc-spacer"></span>
+      <button class="btn ${u.banned ? 'btn-primary' : 'btn-warn'} btn-sm" data-uact="ban">${u.banned ? 'Unban' : 'Ban'}</button>
+      <button class="btn btn-danger btn-sm" data-uact="delete">Delete</button>
+    </div>
+  </div>`;
+}
+
 /* ---------- status ---------- */
 const STATUSES = ['ok', 'degraded', 'outage'];
 const STAT_LABEL = { ok: 'Operational', degraded: 'Degraded', outage: 'Outage' };
+const SEV_LABEL = { degraded: 'Degraded performance', outage: 'Outage', maintenance: 'Maintenance' };
+const SEV_CLASS = { degraded: 'deg', outage: 'out', maintenance: 'mnt' };
+
 async function renderStatus() {
   const main = $('#aMain');
   main.innerHTML = `<div class="sec" style="opacity:0"><div class="a-head"><h1>Loading…</h1></div></div>`;
   try { state.status = (await api('/api/admin/status')).status; } catch { return; }
   const svc = state.status.services;
+  const incidents = state.status.incidents || [];
+  const active = incidents.filter(i => !i.resolved);
+  const resolved = incidents.filter(i => i.resolved).slice(0, 12);
   main.innerHTML = `
   <div class="sec">
-    <div class="a-head"><div><h1>Status</h1><div class="a-sub">90-day history, fully editable. Changes are live on the public status page instantly.</div></div></div>
+    <div class="a-head"><div><h1>Status</h1><div class="a-sub">Incidents, services and 90-day history — everything goes live on the public status page instantly.</div></div></div>
+
+    <div class="card inc-composer">
+      <h3>Write an incident</h3>
+      <div class="inc-form">
+        <div class="inc-row">
+          <select id="incSev">
+            <option value="degraded">Degraded performance</option>
+            <option value="outage">Outage</option>
+            <option value="maintenance">Maintenance</option>
+          </select>
+          <select id="incSvc">
+            <option value="">All services</option>
+            ${svc.map(s => `<option value="${s.id}">${esc(s.name)}</option>`).join('')}
+          </select>
+          <input id="incTitle" placeholder="Short title — e.g. Elevated error rates" maxlength="120">
+        </div>
+        <div class="field" style="margin:0"><textarea id="incMsg" style="min-height:84px" placeholder="What is happening? This text is published on the public status page…" maxlength="1200"></textarea></div>
+        <div class="inc-row inc-foot">
+          <span class="inc-hint">If a service is selected, today is marked accordingly in its history.</span>
+          <button class="btn btn-primary btn-sm" id="incCreate">Publish incident <span style="opacity:.6">→</span></button>
+        </div>
+      </div>
+    </div>
+
+    ${active.length ? `<div class="inc-active">${active.map(incCard).join('')}</div>` : ''}
+
+    ${resolved.length ? `
+    <div class="card inc-resolved-card">
+      <h3>Resolved incidents</h3>
+      ${resolved.map(incRowResolved).join('')}
+    </div>` : ''}
+
     <div class="bulk-bar">
       <span class="b-label">Bulk history</span>
       <select id="bulkStatus">${STATUSES.map(s => `<option value="${s}">${STAT_LABEL[s]}</option>`).join('')}</select>
@@ -235,6 +512,48 @@ async function renderStatus() {
       <button class="btn btn-ghost btn-sm" id="addSvcBtn">Add service</button>
     </div>
   </div>`;
+
+  // create incident
+  $('#incCreate').addEventListener('click', async () => {
+    const title = $('#incTitle').value.trim();
+    const message = $('#incMsg').value.trim();
+    if (!title || !message) { toast('Title and message are required', true); return; }
+    try {
+      await post('/api/admin/status', { op: 'addIncident', title, message, severity: $('#incSev').value, serviceId: $('#incSvc').value || null });
+      toast('Incident published');
+    } catch { toast('Failed', true); }
+    renderStatus();
+  });
+
+  // incident actions (updates / resolve / reopen / delete)
+  main.querySelectorAll('[data-inc]').forEach(card => {
+    card.addEventListener('click', async e => {
+      const b = e.target.closest('button[data-incact]');
+      if (!b) return;
+      const id = card.dataset.inc;
+      const act = b.dataset.incact;
+      try {
+        if (act === 'update') {
+          const input = card.querySelector('.iu-input');
+          const text = input ? input.value.trim() : '';
+          if (!text) { toast('Write the update first', true); return; }
+          await post('/api/admin/status', { op: 'incidentUpdate', id, text });
+          toast('Update posted');
+        } else if (act === 'resolve') {
+          await post('/api/admin/status', { op: 'resolveIncident', id });
+          toast('Incident resolved');
+        } else if (act === 'reopen') {
+          await post('/api/admin/status', { op: 'reopenIncident', id });
+          toast('Incident reopened');
+        } else if (act === 'delete') {
+          if (!confirm('Delete this incident?')) return;
+          await post('/api/admin/status', { op: 'deleteIncident', id });
+          toast('Incident deleted');
+        }
+      } catch { toast('Failed', true); }
+      renderStatus();
+    });
+  });
 
   // bulk
   $('#bulkApply').addEventListener('click', async e => {
@@ -310,9 +629,48 @@ function svcRow(s, i) {
     </div>
     <input class="svr-desc" value="${esc(s.description)}" maxlength="120" placeholder="Description">
     <div class="day-grid">
-      ${s.history.map((v, di) => `<button class="day ${v === 'degraded' ? 'd' : v === 'outage' ? 'o' : ''} ${di === 89 ? 'today' : ''}" data-i="${di}" data-v="${v}" title="${today && di === 89 ? 'Today' : new Date(Date.now() - (89 - di) * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · ${STAT_LABEL[v]} — click to change"></button>`).join('')}
+      ${s.history.map((v, di) => `<button class="day ${v === 'degraded' ? 'd' : v === 'outage' ? 'o' : ''} ${di === 89 ? 'today' : ''}" data-i="${di}" data-v="${v}" title="${di === 89 ? 'Today' : new Date(Date.now() - (89 - di) * 86400000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} · ${STAT_LABEL[v]} — click to change"></button>`).join('')}
     </div>
     <div class="day-scale"><span>${ninetyAgo}</span><span>Today</span></div>
+  </div>`;
+}
+function incSvcName(inc) {
+  if (!inc.serviceId) return 'All services';
+  const s = state.status.services.find(x => x.id === inc.serviceId);
+  return s ? s.name : 'All services';
+}
+function incCard(inc) {
+  return `
+  <div class="inc-card ${SEV_CLASS[inc.severity] || 'deg'}" data-inc="${inc.id}">
+    <div class="inc-top">
+      <span class="inc-sev">${SEV_LABEL[inc.severity] || 'Degraded performance'}</span>
+      <span class="inc-meta">${esc(incSvcName(inc))} · opened ${fullDate(inc.created)}</span>
+      <span class="inc-actions">
+        <button class="btn btn-ghost btn-sm" data-incact="resolve">Resolve</button>
+        <button class="btn btn-danger btn-sm" data-incact="delete">Delete</button>
+      </span>
+    </div>
+    <div class="inc-title">${esc(inc.title)}</div>
+    <div class="inc-msg">${esc(inc.message)}</div>
+    ${(inc.updates && inc.updates.length) ? `<ul class="inc-updates">${inc.updates.map(u => `<li><span class="iu-at">${fullDate(u.at)}</span><span>${esc(u.text)}</span></li>`).join('')}</ul>` : ''}
+    <div class="inc-addupdate">
+      <input class="iu-input" placeholder="Add a public update to this incident…" maxlength="1200">
+      <button class="btn btn-ghost btn-sm" data-incact="update">Post update</button>
+    </div>
+  </div>`;
+}
+function incRowResolved(inc) {
+  return `
+  <div class="inc-res" data-inc="${inc.id}">
+    <span class="inc-sev sm ${SEV_CLASS[inc.severity] || 'deg'}">${SEV_LABEL[inc.severity] || 'Degraded performance'}</span>
+    <div class="inc-res-mid">
+      <div class="inc-title">${esc(inc.title)}</div>
+      <div class="inc-meta">Resolved ${fullDate(inc.resolvedAt || inc.created)} · ${esc(incSvcName(inc))}${(inc.updates && inc.updates.length) ? ` · ${inc.updates.length} update${inc.updates.length === 1 ? '' : 's'}` : ''}</div>
+    </div>
+    <span class="inc-actions">
+      <button class="btn btn-ghost btn-sm" data-incact="reopen">Reopen</button>
+      <button class="btn btn-danger btn-sm" data-incact="delete">Delete</button>
+    </span>
   </div>`;
 }
 
@@ -390,4 +748,5 @@ async function renderSite() {
   } catch {
     showLogin();
   }
+  if (window.TuringVeil) TuringVeil.hide();
 })();
