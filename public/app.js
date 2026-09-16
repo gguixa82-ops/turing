@@ -160,14 +160,14 @@ document.addEventListener('click', e => {
     e.preventDefault();
     closeMobileMenu();
     if (reducedMotion || !window.TuringVeil) { location.assign(href); return; }
-    window.TuringVeil.show().then(() => location.assign(href));
+    window.TuringVeil.show().then(() => { TuringVeil.markNavigated(); location.assign(href); });
     return;
   }
   e.preventDefault();
   closeMobileMenu();
   go(href);
 });
-window.addEventListener('popstate', () => renderRoute(location.pathname, { instant: true }));
+window.addEventListener('popstate', () => withTransition(() => renderRoute(location.pathname, { instant: true })));
 
 /* ---------- chrome: header / footer / announce ---------- */
 const NAV = [
@@ -756,7 +756,7 @@ function onLogin() {
         renderHeader();
         const next = new URLSearchParams(location.search).get('next') || '';
         if (next.startsWith('/') && !next.startsWith('//')) {
-          withTransition(() => location.assign(next));
+          withTransition(() => { if (window.TuringVeil) TuringVeil.markNavigated(); location.assign(next); });
         } else {
           withTransition(() => { history.pushState({}, '', '/'); return renderRoute('/'); });
         }
