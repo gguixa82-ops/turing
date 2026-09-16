@@ -23,7 +23,10 @@ function loadDB() {
 }
 let db = loadDB();
 function save() {
-  fs.writeFileSync(DB_PATH, JSON.stringify(db, null, 2));
+  // escritura atómica: si el proceso muere a mitad, no se corrompe db.json
+  const tmp = DB_PATH + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(db, null, 2));
+  fs.renameSync(tmp, DB_PATH);
 }
 function migrate() {
   // shape upgrades for older databases
@@ -362,6 +365,24 @@ const DOCS_NAV = Object.entries(DOCS).map(([slug, d]) => ({ slug, title: d.title
 
 /* ---------------- API ---------------- */
 
+// limitación simple por IP en memoria (anti fuerza bruta / spam)
+const rateMap = new Map();
+function clientIp(req) {
+  const xf = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return xf || req.socket.remoteAddress || '?';
+}
+function rateLimited(req, bucket, max, windowMs) {
+  const key = bucket + '|' + clientIp(req);
+  const now = Date.now();
+  let arr = rateMap.get(key);
+  if (!arr) { arr = []; rateMap.set(key, arr); }
+  while (arr.length && arr[0] <= now - windowMs) arr.shift();
+  if (arr.length >= max) return true;
+  arr.push(now);
+  if (rateMap.size > 5000) rateMap.clear(); // cota de memoria
+  return false;
+}
+
 async function handleApi(req, res, url) {
   const p = url.pathname.replace(/\/+$/, '');
   const m = req.method;
@@ -399,6 +420,7 @@ async function handleApi(req, res, url) {
 
   // ---- support (public submit) ----
   if (m === 'POST' && p === '/api/support') {
+    if (rateLimited(req, 'support', 5, 60 * 60 * 1000)) return json(res, 429, { error: 'rate_limited', message: 'Too many messages. Try again later.' });
     const b = await readBody(req);
     const name = String(b.name || '').trim().slice(0, 80);
     const email = String(b.email || '').trim().slice(0, 120);
@@ -425,7 +447,7 @@ async function handleApi(req, res, url) {
     const useCases = Array.isArray(b.useCases) ? b.useCases.filter(x => typeof x === 'string').slice(0, 8).map(x => x.slice(0, 30)) : [];
     const acceptedTerms = b.acceptedTerms === true;
     if (!ageBracket || !acceptedTerms) return json(res, 400, { error: 'invalid', message: 'Age and terms acceptance are required.' });
-    u.onboard = { ageBracket, useCases, acceptedTerms, at: new Date().toISOString(), ...(u.onboard || {}) };
+    u.onboard = { ...(u.onboard || {}), ageBracket, useCases, acceptedTerms, at: new Date().toISOString() };
     logActivity(`Onboarding completed: ${u.name}`);
     return json(res, 200, { ok: true, onboard: u.onboard });
   }
@@ -453,6 +475,9 @@ async function handleApi(req, res, url) {
     if (hashPw(current, u.salt) !== u.passHash) return json(res, 401, { error: 'wrong_password', message: 'Current password is incorrect.' });
     if (next.length < 8) return json(res, 400, { error: 'invalid', message: 'Password must be at least 8 characters.' });
     u.salt = newSalt(); u.passHash = hashPw(next, u.salt);
+    const cur = getSession(req);
+    for (const [tok, se] of Object.entries(db.sessions)) if (se.role === 'user' && se.id === u.id && tok !== (cur && cur.token)) delete db.sessions[tok];
+    save();
     logActivity(`Password changed: ${u.name}`);
     return json(res, 200, { ok: true });
   }
@@ -569,6 +594,7 @@ async function handleApi(req, res, url) {
   // ---- auth: register ----
   if (m === 'POST' && p === '/api/auth/register') {
     if (db.site.blockRegistrations) return json(res, 403, { error: 'blocked', message: 'Registrations are temporarily disabled.' });
+    if (rateLimited(req, 'register', 8, 60 * 60 * 1000)) return json(res, 429, { error: 'rate_limited', message: 'Too many registrations from this network. Try again later.' });
     const b = await readBody(req);
     const name = String(b.name || '').trim().slice(0, 60);
     const email = String(b.email || '').trim().toLowerCase().slice(0, 120);
@@ -589,11 +615,13 @@ async function handleApi(req, res, url) {
   // ---- auth: login ----
   if (m === 'POST' && p === '/api/auth/login') {
     if (db.site.blockLogins) return json(res, 403, { error: 'blocked', message: 'Logins are temporarily disabled.' });
+    if (rateLimited(req, 'loginfail', 10, 15 * 60 * 1000)) return json(res, 429, { error: 'rate_limited', message: 'Too many attempts. Try again in a few minutes.' });
     const b = await readBody(req);
     const email = String(b.email || '').trim().toLowerCase();
     const password = String(b.password || '');
     const u = db.users.find(x => x.email === email);
     if (!u || hashPw(password, u.salt) !== u.passHash) return json(res, 401, { error: 'invalid', message: 'Incorrect email or password.' });
+    rateMap.delete('loginfail|' + clientIp(req)); // acierto: limpiar fallos
     if (u.banned) return json(res, 403, { error: 'banned', message: 'This account has been suspended.' });
     u.lastLogin = new Date().toISOString();
     logActivity(`User login: ${u.name}`);
@@ -604,17 +632,22 @@ async function handleApi(req, res, url) {
 
   // ---- auth: password reset request ----
   if (m === 'POST' && p === '/api/auth/reset') {
+    if (rateLimited(req, 'reset', 5, 60 * 60 * 1000)) return json(res, 429, { error: 'rate_limited', message: 'Too many requests. Try again later.' });
     const b = await readBody(req);
     const email = String(b.email || '').trim().toLowerCase();
+    // purgar tokens caducados
+    for (const [tk, t] of Object.entries(db.resets)) if (t.exp < Date.now()) delete db.resets[tk];
     const u = db.users.find(x => x.email === email);
-    if (!u) return json(res, 200, { ok: true, state: 'unknown' });
-    const token = crypto.randomBytes(24).toString('hex');
-    db.resets[token] = { email, exp: Date.now() + 24 * 3600 * 1000 };
-    const link = `${origin}/recovery?token=${token}`;
-    const r = await sendEmail({ to: email, subject: 'Reset your Turing password', html: resetEmail(u.name, link) });
-    if (r.ok) { logActivity(`Password reset link sent to ${email}`); return json(res, 200, { ok: true, state: 'sent' }); }
-    logActivity(`Password reset requested for ${email} — email not delivered (${r.reason})`);
-    return json(res, 200, { ok: true, state: 'not_configured', email: email });
+    // respuesta idéntica exista o no la cuenta: no se revela qué emails están registrados
+    if (u) {
+      const token = crypto.randomBytes(24).toString('hex');
+      db.resets[token] = { email, exp: Date.now() + 24 * 3600 * 1000 };
+      const link = `${origin}/recovery?token=${token}`;
+      const r = await sendEmail({ to: email, subject: 'Reset your Turing password', html: resetEmail(u.name, link) });
+      if (r.ok) logActivity(`Password reset link sent to ${email}`);
+      else logActivity(`Password reset requested for ${email} — email not delivered (${r.reason})`);
+    }
+    return json(res, 200, { ok: true, state: 'sent' });
   }
 
   // ---- auth: recovery token check ----
@@ -637,6 +670,7 @@ async function handleApi(req, res, url) {
     if (!u) return json(res, 400, { error: 'expired', message: 'This reset link is no longer valid.' });
     u.salt = newSalt(); u.passHash = hashPw(password, u.salt);
     delete db.resets[token];
+    killUserSessions(u.id); // la nueva contraseña invalida sesiones abiertas en otros dispositivos
     logActivity(`Password reset completed: ${u.name}`);
     return json(res, 200, { ok: true });
   }
@@ -644,10 +678,12 @@ async function handleApi(req, res, url) {
   /* ================= ADMIN ================= */
 
   if (m === 'POST' && p === '/api/admin/login') {
+    if (rateLimited(req, 'adminfail', 10, 15 * 60 * 1000)) return json(res, 429, { error: 'rate_limited', message: 'Too many attempts. Try again in a few minutes.' });
     const b = await readBody(req);
     const un = String(b.username || '').trim();
     const pw = String(b.password || '');
     if (un !== db.admin.username || hashPw(pw, db.admin.salt) !== db.admin.passHash) return json(res, 401, { error: 'invalid', message: 'Invalid credentials.' });
+    rateMap.delete('adminfail|' + clientIp(req));
     const token = createSession('admin', 'admin');
     setSessionCookie(res, token);
     logActivity('Admin login');
@@ -895,6 +931,7 @@ async function handleApi(req, res, url) {
         method: 'POST',
         headers: { Authorization: `Bearer ${a.apiKey}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: a.model, messages: [{ role: 'user', content: 'ping' }], max_tokens: 4, stream: false }),
+        signal: AbortSignal.timeout(15000),
       });
       const j = await r.json().catch(() => ({}));
       if (!r.ok) {
@@ -941,6 +978,9 @@ const server = http.createServer(async (req, res) => {
     // SPA fallback
     return serveFile(req, res, path.join(PUBLIC_DIR, "index.html"));
   } catch (e) {
+    if (e && (e.message === 'bad json' || e.message === 'too large')) {
+      return json(res, 400, { error: 'invalid', message: e.message === 'too large' ? 'Request body too large.' : 'Invalid JSON body.' });
+    }
     console.error(e);
     if (!res.headersSent) json(res, 500, { error: 'server_error' });
     else res.end();

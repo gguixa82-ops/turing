@@ -687,6 +687,7 @@ function startPhilosophy() {
   const PHIL = [1, 2, 3, 4, 5, 6].map(i => T('phil' + i));
   let i = 0;
   const show = () => {
+    if (!phrase.isConnected) return; // la ruta cambió: detener la cadena de timers
     const text = PHIL[i];
     const words = text.split(' ');
     phrase.innerHTML = words.map((w, wi) => `<span class="pw" style="--d:${(wi * 0.075).toFixed(3)}s">${esc(w)}</span>`).join(' ');
