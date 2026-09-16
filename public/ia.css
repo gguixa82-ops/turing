@@ -127,14 +127,14 @@ button { font-family: inherit; cursor: pointer; }
 .msg.turing .m-avatar { background: #141417; border: 1px solid var(--line-2); }
 .msg.turing .m-avatar .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--white); }
 .msg.user .m-avatar { background: linear-gradient(135deg, #33333A, #17171A); border: 1px solid var(--line-2); font-size: 12px; font-weight: 700; color: var(--white); }
-.m-col { min-width: 0; max-width: calc(100% - 52px); display: flex; flex-direction: column; gap: 7px; }
-.msg.user .m-col { align-items: flex-end; }
+.m-col { min-width: 0; display: flex; flex-direction: column; gap: 7px; }
+.msg.turing .m-col { max-width: calc(100% - 52px); }
+.msg.user .m-col { align-items: flex-end; max-width: min(calc(100% - 52px), 76%); }
 .m-who { font-size: 11px; font-weight: 800; letter-spacing: .09em; text-transform: uppercase; color: var(--text-4); }
 .msg.user .m-bubble {
   background: var(--bg-4); border: 1px solid rgba(255,255,255,0.07);
   padding: 12px 17px; border-radius: 19px 19px 5px 19px;
   font-size: 14.5px; line-height: 1.6; color: var(--text); white-space: pre-wrap; word-break: break-word;
-  max-width: 88%;
 }
 .msg.turing .m-content { font-size: 15px; line-height: 1.74; color: var(--text); word-break: break-word; }
 

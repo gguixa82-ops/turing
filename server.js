@@ -189,6 +189,50 @@ function escapeHtml(s) {
 
 const DEFAULT_SYSTEM_PROMPT = 'You are Turing, a precise, thoughtful AI assistant. Reason carefully, answer directly, and avoid filler. Always reply in the user\'s language. Use Markdown when it helps: headings, lists, and fenced code blocks for code.';
 
+// Demo mode: sin API key configurada el chat sigue siendo funcional.
+// Responde localmente (mismo protocolo SSE que streamGroq) con una respuesta
+// claramente marcada como demo, en el idioma detectado del mensaje.
+async function streamDemo(res, req, userText, u) {
+  res.on('error', () => {});
+  const ctrl = new AbortController();
+  req.on('close', () => ctrl.abort());
+  const text = String(userText || '');
+  const es = /(\b(hola|buenos|buenas|dias|días|tardes|noches|gracias|por favor|que tal|qué tal|como estas|cómo estás|ayuda|escribe|explica|dime|puedes)\b)|[¿¡ñáéíóú]/i.test(text);
+  const first = u && u.name ? String(u.name).trim().split(/\s+/)[0] : '';
+  const eco = text.length > 120 ? text.slice(0, 120) + '…' : text;
+  const reply = es
+    ? `🧪 **Modo demo** — el asistente real aún no está configurado: falta añadir la clave de API en el panel de administración.\n\n¡Hola${first ? ' ' + first : ''}! Recibí tu mensaje: *${eco}*\n\nCuando la clave esté configurada, aquí verás la respuesta del modelo real. Mientras tanto, esto demuestra que el chat funciona de punta a punta: el texto llega en streaming, el formato **markdown** se renderiza y las listas se ven bien:\n\n- Los mensajes se envían y se guardan\n- El historial se conserva entre sesiones\n- El streaming es fluido\n\nY también los bloques de código:\n\n\`\`\`js\nconsole.log("Turing demo listo");\n\`\`\`\n`
+    : `🧪 **Demo mode** — the real assistant is not configured yet: add the API key in the admin panel.\n\nHi${first ? ' ' + first : ''}! I got your message: *${eco}*\n\nOnce the key is set, you will see the real model's answer here. Meanwhile this proves the chat works end to end: text streams in, **markdown** renders and lists look right:\n\n- Messages send and save\n- History is kept between sessions\n- Streaming is smooth\n\nCode blocks too:\n\n\`\`\`js\nconsole.log("Turing demo ready");\n\`\`\`\n`;
+  let full = '';
+  try {
+    if (!res.headersSent) {
+      res.writeHead(200, {
+        'Content-Type': 'text/event-stream; charset=utf-8',
+        'Cache-Control': 'no-cache, no-transform',
+        'Connection': 'keep-alive',
+        'X-Accel-Buffering': 'no',
+      });
+    }
+  } catch { return ''; }
+  const chunks = reply.match(/\S+\s*/g) || [reply];
+  await new Promise(resolve => {
+    let i = 0;
+    const next = () => {
+      if (ctrl.signal.aborted) return resolve();
+      if (i >= chunks.length) {
+        try { res.write(`data: ${JSON.stringify({ done: true })}\n\n`); res.end(); } catch {}
+        return resolve();
+      }
+      const c = chunks[i++];
+      full += c;
+      try { res.write(`data: ${JSON.stringify({ content: c })}\n\n`); } catch { return resolve(); }
+      setTimeout(next, 16);
+    };
+    next();
+  });
+  return full;
+}
+
 // rolling-window usage: { used, limit, windowHours, remaining, resetsAt }
 // per-user overrides (admin panel) take precedence over the global limit
 function usageFor(u) {
@@ -489,11 +533,11 @@ async function handleApi(req, res, url) {
     const b = await readBody(req);
     const content = String(b.content || '').trim().slice(0, 6000);
     if (!content) return json(res, 400, { error: 'invalid', message: 'Message is required.' });
-    if (!db.ai.apiKey) return json(res, 503, { error: 'not_configured', message: 'The AI model has not been configured yet.' });
+    const demo = !db.ai.apiKey; // sin clave configurada → modo demo local (streamDemo)
     const usage = usageFor(u);
-    if (usage.used >= usage.limit) return json(res, 429, { error: 'rate_limited', resetsAt: usage.resetsAt });
-    // count this message against the rolling window
-    db.usage[u.id].push(Date.now());
+    if (!demo && usage.used >= usage.limit) return json(res, 429, { error: 'rate_limited', resetsAt: usage.resetsAt });
+    // count this message against the rolling window (el demo no consume cupo)
+    if (!demo) db.usage[u.id].push(Date.now());
     chat.messages.push({ role: 'user', content, at: new Date().toISOString() });
     let newTitle = null;
     if (chat.messages.filter(x => x.role === 'user').length === 1) {
@@ -511,7 +555,9 @@ async function handleApi(req, res, url) {
       'X-Accel-Buffering': 'no',
     });
     if (newTitle) res.write(`data: ${JSON.stringify({ title: newTitle })}\n\n`);
-    const full = await streamGroq(res, req, db.ai.model, [{ role: 'system', content: sys }, ...hist], true);
+    const full = demo
+      ? await streamDemo(res, req, content, u)
+      : await streamGroq(res, req, db.ai.model, [{ role: 'system', content: sys }, ...hist], true);
     if (full) {
       chat.messages.push({ role: 'assistant', content: full, at: new Date().toISOString() });
       chat.updated = new Date().toISOString();
