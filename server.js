@@ -90,6 +90,16 @@ function seed() {
 }
 if (!db) seed(); else { migrate(); save(); } // ensure shape persists
 
+function purgeSessions() {
+  const now = Date.now();
+  let n = 0;
+  for (const [tok, s] of Object.entries(db.sessions)) if (s.exp < now) { delete db.sessions[tok]; n++; }
+  if (n) save();
+  return n;
+}
+purgeSessions(); // al arrancar
+setInterval(purgeSessions, 6 * 3600 * 1000); // y cada 6h: las sesiones no crecen sin fin
+
 function logActivity(text) {
   db.activity.unshift({ at: new Date().toISOString(), text });
   db.activity = db.activity.slice(0, 80);
@@ -957,6 +967,8 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, 'http://internal');
     const p = url.pathname;
 
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
     if (p.startsWith('/api/')) return await handleApi(req, res, url);
 
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); return res.end(); }

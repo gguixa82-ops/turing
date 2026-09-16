@@ -508,7 +508,7 @@ async function renderStatus() {
       ${svc.map((s, i) => svcRow(s, i)).join('')}
     </div>
     <div class="add-svc card" style="margin-top:16px">
-      <input id="newSvcName" placeholder="New service name (e.g. "Search")">
+      <input id="newSvcName" placeholder='New service name (e.g. "Search")'>
       <button class="btn btn-ghost btn-sm" id="addSvcBtn">Add service</button>
     </div>
   </div>`;
