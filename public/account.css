@@ -59,6 +59,18 @@ button { font-family: inherit; cursor: pointer; }
   box-shadow: 0 14px 40px rgba(0,0,0,0.45);
 }
 .hero-ava::after { content: ''; position: absolute; inset: -5px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.12); }
+.hero-ava img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
+.hero-ava-wrap { position: relative; flex: none; width: 76px; height: 76px; }
+.ava-edit {
+  position: absolute; right: -4px; bottom: -4px; z-index: 2; width: 28px; height: 28px;
+  border-radius: 50%; border: 1px solid var(--line-2); background: #1C1C22; color: var(--text-2);
+  display: grid; place-items: center; cursor: pointer; transition: color .15s, border-color .15s, background .15s;
+}
+.ava-edit:hover { color: var(--white); border-color: rgba(255,255,255,0.35); background: #26262E; }
+.ava-edit:disabled { opacity: .5; cursor: wait; }
+.ava-hint { display: block; font-size: 12.5px; font-weight: 600; margin-top: 8px; }
+.ava-hint.ok { color: var(--green); }
+.ava-hint.err { color: #E8756A; }
 .hero-id { flex: 1; min-width: 220px; }
 .hero-id h1 { font-size: 27px; font-weight: 800; letter-spacing: -0.025em; color: var(--white); }
 .hero-mail { font-size: 14px; color: var(--text-3); margin-top: 4px; }
@@ -68,6 +80,12 @@ button { font-family: inherit; cursor: pointer; }
 .hm-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px rgba(62,207,142,0.7); }
 .plan-chip { color: var(--white); background: rgba(255,255,255,0.06); text-transform: capitalize; }
 .signout { display: inline-flex; align-items: center; gap: 8px; padding: 10px 16px; border-radius: 999px; }
+
+/* stats card */
+.stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 6px 0 12px; }
+.stat-box { background: var(--bg-3, #131316); border: 1px solid var(--line); border-radius: 14px; padding: 16px 14px; text-align: center; }
+.st-n { display: block; font-size: 30px; font-weight: 800; letter-spacing: -0.03em; color: var(--white); font-variant-numeric: tabular-nums; }
+.st-l { display: block; margin-top: 4px; font-size: 11.5px; font-weight: 600; letter-spacing: .05em; text-transform: uppercase; color: var(--text-3); }
 
 /* grid + cards */
 .acc-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }

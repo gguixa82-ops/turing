@@ -16,7 +16,19 @@ let lang = TURING_I18N.detectLang();
 document.documentElement.lang = lang;
 const locale = () => (lang === 'en' ? 'en-US' : lang);
 
-const state = { user: null, usage: null, plan: 'free', countedTo: -1 };
+const state = { user: null, usage: null, plan: 'free', countedTo: -1, stats: null };
+
+function avaHint(key, ok) {
+  const msg = $('#avaMsg');
+  msg.textContent = T(key);
+  msg.className = 'ava-hint ' + (ok ? 'ok' : 'err');
+  msg.hidden = false;
+  clearTimeout(avaHint._t);
+  avaHint._t = setTimeout(() => { msg.hidden = true; }, 4000);
+}
+function setHeroAvatar(dataUrl) {
+  $('#accAva').innerHTML = `<img src="${esc(dataUrl)}" alt="">`;
+}
 
 /* ---------- i18n ---------- */
 function applyStaticI18n() {
@@ -85,7 +97,14 @@ function fillDynamic() {
   const u = state.user;
   $('#accName').textContent = u.name;
   $('#accEmail').textContent = u.email;
-  $('#accAva').textContent = (u.name || '?').trim().charAt(0).toUpperCase();
+  const ava = $('#accAva');
+  if (u.avatar) ava.innerHTML = `<img src="${esc(u.avatar)}" alt="">`;
+  else ava.textContent = (u.name || '?').trim().charAt(0).toUpperCase();
+  const stats = state.stats;
+  if (stats) {
+    $('#stChats').textContent = stats.chats;
+    $('#stMsgs').textContent = stats.messages;
+  }
   $('#kvName').textContent = u.name;
   $('#kvEmail').textContent = u.email;
   let joined = u.created;
@@ -155,6 +174,35 @@ $('#passForm').addEventListener('submit', async e => {
   } finally { btn.disabled = false; }
 });
 
+/* ---------- avatar ---------- */
+$('#avaBtn').addEventListener('click', () => $('#avaInput').click());
+$('#avaInput').addEventListener('change', async () => {
+  const f = ($('#avaInput').files || [])[0];
+  $('#avaInput').value = '';
+  if (!f) return;
+  if (!/^image\/(png|jpeg|webp)$/.test(f.type)) { avaHint('accAvatarType', false); return; }
+  try {
+    const data = await new Promise((res, rej) => {
+      const r = new FileReader();
+      r.onload = () => res(String(r.result));
+      r.onerror = () => rej(new Error('read'));
+      r.readAsDataURL(f);
+    });
+    const b64 = data.split(',')[1] || '';
+    if (Math.floor(b64.length * 3 / 4) > 64 * 1024) { avaHint('accAvatarBig', false); return; }
+    const btn = $('#avaBtn');
+    btn.disabled = true;
+    try {
+      const r = await fetchJSON('/api/account/avatar', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ data }) });
+      state.user.avatar = r.avatar;
+      setHeroAvatar(r.avatar);
+      avaHint('accAvatarSaved', true);
+    } finally { btn.disabled = false; }
+  } catch {
+    avaHint('accAvatarBig', false);
+  }
+});
+
 /* ---------- boot ---------- */
 (async function boot() {
   let data;
@@ -169,6 +217,7 @@ $('#passForm').addEventListener('submit', async e => {
   state.user = data.user;
   state.usage = data.usage;
   state.plan = data.plan || 'free';
+  state.stats = data.stats || null;
 
   applyStaticI18n();
   buildLangMenu();

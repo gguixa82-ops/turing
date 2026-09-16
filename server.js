@@ -11,6 +11,8 @@ const crypto = require('crypto');
 const PORT = process.env.PORT || 3000;
 const ROOT = __dirname;
 const PUBLIC_DIR = path.join(ROOT, 'public');
+const UPLOAD_DIR = path.join(ROOT, 'uploads');
+if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 const DATA_DIR = path.join(ROOT, 'data');
 const DB_PATH = path.join(DATA_DIR, 'db.json');
 const cfg = JSON.parse(fs.readFileSync(path.join(ROOT, 'config.json'), 'utf8'));
@@ -335,6 +337,14 @@ function json(res, code, obj) {
   res.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' });
   res.end(body);
 }
+function readBodyBig(req, limit) {
+  return new Promise((resolve, reject) => {
+    let size = 0; const chunks = [];
+    req.on('data', c => { size += c.length; if (size > limit) { reject(new Error('too large')); req.destroy(); } else chunks.push(c); });
+    req.on('end', () => { try { resolve(chunks.length ? JSON.parse(Buffer.concat(chunks).toString('utf8')) : {}); } catch { reject(new Error('bad json')); } });
+    req.on('error', reject);
+  });
+}
 function readBody(req) {
   return new Promise((resolve, reject) => {
     let size = 0; const chunks = [];
@@ -375,6 +385,51 @@ const RESEARCH_BY_SLUG = Object.fromEntries(RESEARCH.map(p => [p.slug, p]));
 const DOCS_NAV = Object.entries(DOCS).map(([slug, d]) => ({ slug, title: d.title, section: d.section, comingSoon: !!d.comingSoon }));
 
 /* ---------------- API ---------------- */
+
+const TEXT_EXTS = new Set(['txt','md','markdown','csv','json','js','mjs','ts','jsx','tsx','py','rb','go','rs','java','c','h','cpp','cs','php','sh','bash','html','css','xml','yml','yaml','sql','toml','ini','log']);
+const MIME_EXT = { 'image/png':'png','image/jpeg':'jpg','image/webp':'webp','image/gif':'gif','application/pdf':'pdf' };
+const MAX_FILE = 5 * 1024 * 1024, MAX_TEXT_FILE = 160 * 1024, MAX_ATTACH_TEXT = 60000;
+
+// contextp extra que ve el modelo por cada adjunto
+function attachmentContext(atts) {
+  if (!Array.isArray(atts) || !atts.length) return '';
+  const parts = atts.map(a => {
+    if (a && a.text) return `--- Attached file: ${a.name} ---\n${a.text}\n--- end of ${a.name} ---`;
+    const kind = a && a.mime && a.mime.startsWith('image/') ? 'an image' : 'a binary file';
+    return `[The user attached ${kind}: "${a.name}". Its content cannot be read as text${kind === 'an image' ? ' unless the current model supports vision' : ''}.]`;
+  });
+  return '\n\n' + parts.join('\n\n');
+}
+function validAttachments(atts) {
+  if (atts === undefined || atts === null) return { ok: true, list: [] };
+  if (!Array.isArray(atts) || atts.length > 4) return { ok: false };
+  const list = [];
+  for (const a of atts) {
+    if (!a || typeof a !== 'object') return { ok: false };
+    const name = String(a.name || '').slice(0, 140);
+    const url = String(a.url || '');
+    const mime = String(a.mime || '').slice(0, 80);
+    if (!name || !/^\/uploads\/chat-[a-f0-9]{16}\.[a-z0-9]{1,8}$/.test(url)) return { ok: false };
+    list.push({ name, url, mime, size: Math.min(20 * 1024 * 1024, parseInt(a.size, 10) || 0), text: typeof a.text === 'string' ? a.text.slice(0, MAX_ATTACH_TEXT) : undefined });
+  }
+  return { ok: true, list };
+}
+// para modelos con visión: partes de contenido con imágenes embebidas
+function userContentParts(text, atts, attachmentsForVision) {
+  const imgs = (atts || []).filter(a => a.mime && a.mime.startsWith('image/'));
+  const vision = attachmentsForVision && imgs.length;
+  if (!vision) return text;
+  const parts = [{ type: 'text', text }];
+  for (const img of imgs) {
+    try {
+      const f = path.join(UPLOAD_DIR, img.url.split('/').pop());
+      if (!f.startsWith(UPLOAD_DIR) || !fs.existsSync(f)) continue;
+      const b64 = fs.readFileSync(f).toString('base64');
+      parts.push({ type: 'image_url', image_url: { url: `data:${img.mime};base64,${b64}` } });
+    } catch {}
+  }
+  return parts;
+}
 
 // limitación simple por IP en memoria (anti fuerza bruta / spam)
 const rateMap = new Map();
@@ -469,7 +524,7 @@ async function handleApi(req, res, url) {
   if (m === 'GET' && p === '/api/auth/me') {
     const u = requireUser(req);
     if (!u) return json(res, 401, { error: 'unauthorized' });
-    return json(res, 200, { user: { name: u.name, email: u.email, created: u.created, plan: u.plan || 'free' }, onboarded: !!(u.onboard && u.onboard.acceptedTerms) });
+    return json(res, 200, { user: { name: u.name, email: u.email, created: u.created, plan: u.plan || 'free', avatar: u.avatar || null }, onboarded: !!(u.onboard && u.onboard.acceptedTerms) });
   }
   if (m === 'POST' && p === '/api/auth/logout') {
     const s = getSession(req);
@@ -500,8 +555,27 @@ async function handleApi(req, res, url) {
     const u = requireUser(req);
     if (!u) return json(res, 401, { error: 'unauthorized' });
     const usage = usageFor(u);
+    const chats = db.chats[u.id] || [];
+    let msgs = 0; for (const c of chats) msgs += c.messages.length;
     save();
-    return json(res, 200, { user: { name: u.name, email: u.email, created: u.created }, plan: u.plan || 'free', onboard: u.onboard || null, usage });
+    return json(res, 200, { user: { name: u.name, email: u.email, created: u.created, avatar: u.avatar || null }, plan: u.plan || 'free', onboard: u.onboard || null, usage, stats: { chats: chats.length, messages: msgs } });
+  }
+  // ---- avatar de perfil ----
+  if (m === 'POST' && p === '/api/account/avatar') {
+    const u = requireUser(req);
+    if (!u) return json(res, 401, { error: 'unauthorized' });
+    let b;
+    try { b = await readBodyBig(req, 200 * 1024); }
+    catch (e) { return json(res, 400, { error: e.message === 'too large' ? 'too_big' : 'invalid', message: 'Image too large (max 64 KB).' }); }
+    const data = String(b.data || '');
+    const mimg = data.match(/^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/);
+    if (!mimg) return json(res, 400, { error: 'invalid', message: 'Send a PNG, JPEG or WebP image.' });
+    const bytes = Buffer.from(mimg[2], 'base64');
+    if (bytes.length > 64 * 1024) return json(res, 400, { error: 'too_big', message: 'Image too large (max 64 KB).' });
+    u.avatar = data.slice(0, 100 * 1024);
+    logActivity(`Avatar updated: ${u.name}`);
+    save();
+    return json(res, 200, { ok: true, avatar: u.avatar });
   }
   if (m === 'POST' && p === '/api/account/delete') {
     const u = requireUser(req);
@@ -514,6 +588,106 @@ async function handleApi(req, res, url) {
     save();
     clearSessionCookie(res);
     return json(res, 200, { ok: true });
+  }
+
+  // ---- subida de archivos para el chat ----
+  if (m === 'POST' && p === '/api/upload') {
+    const u = requireUser(req);
+    if (!u) return json(res, 401, { error: 'unauthorized' });
+    if (rateLimited(req, 'upload', 30, 60 * 60 * 1000)) return json(res, 429, { error: 'rate_limited', message: 'Too many uploads. Try again later.' });
+    let b;
+    try { b = await readBodyBig(req, 7.5 * 1024 * 1024); }
+    catch (e) { return json(res, 400, { error: e.message === 'too large' ? 'too_big' : 'invalid', message: 'File too large (max 5 MB).' }); }
+    const name = String(b.name || 'file').replace(/[^A-Za-z0-9._ -]/g, '').trim().slice(0, 120) || 'file';
+    const extGuess = (name.split('.').pop() || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const mime = String(b.type || '').slice(0, 80).toLowerCase() || (TEXT_EXTS.has(extGuess) ? 'text/plain' : '');
+    const okMime = /^image\/(png|jpeg|webp|gif)$/.test(mime) || mime === 'application/pdf' || mime.startsWith('text/') || /^(application\/)(json|javascript|x-python|sql|xml|yaml)$/.test(mime);
+    if (!okMime) return json(res, 415, { error: 'bad_type', message: 'Unsupported file type.' });
+    const b64 = String(b.data || '').replace(/^data:[^,]*,/, '');
+    let buf;
+    try { buf = Buffer.from(b64, 'base64'); } catch { return json(res, 400, { error: 'invalid' }); }
+    if (!buf.length || buf.length > MAX_FILE) return json(res, 400, { error: 'too_big', message: 'File too large (max 5 MB).' });
+    const extFromName = (name.split('.').pop() || '').toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 8);
+    const ext = MIME_EXT[mime] || (TEXT_EXTS.has(extFromName) ? extFromName : mime.startsWith('text/') ? 'txt' : 'bin');
+    const fname = `chat-${crypto.randomBytes(8).toString('hex')}.${ext}`;
+    fs.writeFileSync(path.join(UPLOAD_DIR, fname), buf);
+    const out = { url: `/uploads/${fname}`, name, mime, size: buf.length };
+    // extracción de texto para archivos legibles
+    const isText = mime.startsWith('text/') || TEXT_EXTS.has(extFromName) || /^(application\/)(json|javascript|x-python|sql|xml|yaml)$/.test(mime);
+    if (isText && buf.length <= MAX_TEXT_FILE) {
+      try { out.text = buf.toString('utf8').slice(0, MAX_ATTACH_TEXT); } catch {}
+    }
+    logActivity(`File uploaded: ${name} (${Math.round(buf.length / 1024)} KB)`);
+    return json(res, 201, out);
+  }
+
+  // ---- chat incógnito: igual que mensajes pero sin guardar nada ----
+  const incognitoMatch = p.match(/^\/api\/incognito\/messages$/);
+  if (m === 'POST' && incognitoMatch) {
+    const u = requireUser(req);
+    if (!u) return json(res, 401, { error: 'unauthorized' });
+    if (db.site.maintenance) return json(res, 503, { error: 'maintenance', message: 'Turing is under maintenance.' });
+    const b = await readBody(req);
+    const content = String(b.content || '').trim().slice(0, 6000);
+    const va = validAttachments(b.attachments);
+    if (!va.ok) return json(res, 400, { error: 'invalid', message: 'Bad attachments.' });
+    if (!content && !va.list.length) return json(res, 400, { error: 'invalid', message: 'Message is required.' });
+    const demo = !db.ai.apiKey;
+    const usage = usageFor(u);
+    if (!demo && usage.used >= usage.limit) return json(res, 429, { error: 'rate_limited', resetsAt: usage.resetsAt });
+    if (!demo) db.usage[u.id].push(Date.now());
+    save();
+    const sys = (db.ai.systemPrompt || DEFAULT_SYSTEM_PROMPT).trim();
+    const hist = [{ role: 'user', content: content + attachmentContext(va.list) }];
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    const atts = va.list, vision = !demo && /llama-4|vision/i.test(db.ai.model);
+    const full = demo
+      ? await streamDemo(res, req, content || (atts[0] && atts[0].name) || '', u)
+      : await streamGroq(res, req, db.ai.model, [{ role: 'system', content: sys }, { role: 'user', content: userContentParts(hist[0].content, atts, vision) }], true);
+    return;
+  }
+
+  // ---- regenerar la última respuesta del chat ----
+  const retryMatch = p.match(/^\/api\/chats\/([a-z0-9]+)\/retry$/);
+  if (m === 'POST' && retryMatch) {
+    const u = requireUser(req);
+    if (!u) return json(res, 401, { error: 'unauthorized' });
+    if (db.site.maintenance) return json(res, 503, { error: 'maintenance', message: 'Turing is under maintenance.' });
+    const chats = db.chats[u.id] || [];
+    const chat = chats.find(c => c.id === retryMatch[1]);
+    if (!chat) return json(res, 404, { error: 'not_found' });
+    while (chat.messages.length && chat.messages[chat.messages.length - 1].role === 'assistant') chat.messages.pop();
+    if (!chat.messages.length || chat.messages[chat.messages.length - 1].role !== 'user') return json(res, 400, { error: 'invalid', message: 'Nothing to retry.' });
+    const demo = !db.ai.apiKey;
+    const usage = usageFor(u);
+    if (!demo && usage.used >= usage.limit) return json(res, 429, { error: 'rate_limited', resetsAt: usage.resetsAt });
+    if (!demo) db.usage[u.id].push(Date.now());
+    chat.updated = new Date().toISOString();
+    save();
+    const sys = (db.ai.systemPrompt || DEFAULT_SYSTEM_PROMPT).trim();
+    const hist = chat.messages.slice(-24).map(x => ({ role: x.role, content: x.content + attachmentContext(x.attachments) }));
+    res.writeHead(200, {
+      'Content-Type': 'text/event-stream; charset=utf-8',
+      'Cache-Control': 'no-cache, no-transform',
+      'Connection': 'keep-alive',
+      'X-Accel-Buffering': 'no',
+    });
+    const lastUser = [...chat.messages].reverse().find(x => x.role === 'user');
+    const vision = !demo && /llama-4|vision/i.test(db.ai.model);
+    const full = demo
+      ? await streamDemo(res, req, lastUser ? lastUser.content : '', u)
+      : await streamGroq(res, req, db.ai.model, [{ role: 'system', content: sys }, ...hist.slice(0, -1), { role: 'user', content: userContentParts(lastUser.content + attachmentContext(lastUser.attachments), lastUser.attachments, vision) }], true);
+    if (full) {
+      chat.messages.push({ role: 'assistant', content: full, at: new Date().toISOString() });
+      chat.updated = new Date().toISOString();
+      save();
+    }
+    return;
   }
 
   // ---- chats ----
@@ -571,22 +745,27 @@ async function handleApi(req, res, url) {
     if (!chat) return json(res, 404, { error: 'not_found' });
     const b = await readBody(req);
     const content = String(b.content || '').trim().slice(0, 6000);
-    if (!content) return json(res, 400, { error: 'invalid', message: 'Message is required.' });
+    if (!content && !(Array.isArray(b.attachments) && b.attachments.length)) return json(res, 400, { error: 'invalid', message: 'Message is required.' });
+    const va = validAttachments(b.attachments);
+    if (!va.ok) return json(res, 400, { error: 'invalid', message: 'Bad attachments.' });
     const demo = !db.ai.apiKey; // sin clave configurada → modo demo local (streamDemo)
     const usage = usageFor(u);
     if (!demo && usage.used >= usage.limit) return json(res, 429, { error: 'rate_limited', resetsAt: usage.resetsAt });
     // count this message against the rolling window (el demo no consume cupo)
     if (!demo) db.usage[u.id].push(Date.now());
-    chat.messages.push({ role: 'user', content, at: new Date().toISOString() });
+    const umsg = { role: 'user', content, at: new Date().toISOString() };
+    if (va.list.length) umsg.attachments = va.list.map(a => ({ name: a.name, url: a.url, mime: a.mime, size: a.size }));
+    chat.messages.push(umsg);
     let newTitle = null;
     if (chat.messages.filter(x => x.role === 'user').length === 1) {
-      chat.title = content.replace(/\s+/g, ' ').slice(0, 48);
+      const t0 = content || (va.list[0] && va.list[0].name) || 'New chat';
+      chat.title = t0.replace(/\s+/g, ' ').slice(0, 48);
       newTitle = chat.title;
     }
     chat.updated = new Date().toISOString();
     save();
     const sys = (db.ai.systemPrompt || DEFAULT_SYSTEM_PROMPT).trim();
-    const hist = chat.messages.slice(-24).map(x => ({ role: x.role, content: x.content }));
+    const hist = chat.messages.slice(-24).map(x => ({ role: x.role, content: x.content + attachmentContext(x.attachments) }));
     res.writeHead(200, {
       'Content-Type': 'text/event-stream; charset=utf-8',
       'Cache-Control': 'no-cache, no-transform',
@@ -594,9 +773,11 @@ async function handleApi(req, res, url) {
       'X-Accel-Buffering': 'no',
     });
     if (newTitle) res.write(`data: ${JSON.stringify({ title: newTitle })}\n\n`);
+    const lastMsg = chat.messages[chat.messages.length - 1];
+    const vision = !demo && /llama-4|vision/i.test(db.ai.model);
     const full = demo
       ? await streamDemo(res, req, content, u)
-      : await streamGroq(res, req, db.ai.model, [{ role: 'system', content: sys }, ...hist], true);
+      : await streamGroq(res, req, db.ai.model, [{ role: 'system', content: sys }, ...hist.slice(0, -1), { role: 'user', content: userContentParts(lastMsg.content + attachmentContext(lastMsg.attachments), lastMsg.attachments, vision) }], true);
     if (full) {
       chat.messages.push({ role: 'assistant', content: full, at: new Date().toISOString() });
       chat.updated = new Date().toISOString();
@@ -980,6 +1161,13 @@ const server = http.createServer(async (req, res) => {
 
     if (p === '/admin1042024' || p === '/admin1042024/') {
       return serveFile(req, res, path.join(PUBLIC_DIR, 'admin.html'));
+    }
+    const upMatch = p.match(/^\/uploads\/(chat-[a-f0-9]{16}\.[a-z0-9]{1,8})$/);
+    if (upMatch) {
+      const file = path.join(UPLOAD_DIR, upMatch[1]);
+      if (!file.startsWith(UPLOAD_DIR) || !fs.existsSync(file)) { res.writeHead(404); return res.end(); }
+      res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+      return serveFile(req, res, file);
     }
     if (p === '/ia' || p === '/ia/') return serveFile(req, res, path.join(PUBLIC_DIR, 'ia.html'));
     if (p === '/account' || p === '/account/') return serveFile(req, res, path.join(PUBLIC_DIR, 'account.html'));

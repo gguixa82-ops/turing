@@ -17,13 +17,14 @@ let lang = TURING_I18N.detectLang();
 document.documentElement.lang = lang;
 const locale = () => (lang === 'en' ? 'en-US' : lang);
 
-const state = { user: null, chats: [], activeId: null, activeChat: null, streaming: false };
+const state = { user: null, chats: [], activeId: null, activeChat: null, streaming: false, incognito: null, pending: [] };
 let abortCtrl = null;
 
 /* ---------- i18n ---------- */
 function applyStaticI18n() {
   document.documentElement.lang = lang;
   $$('[data-i18n]').forEach(n => { n.textContent = T(n.dataset.i18n); });
+  $$('[data-i18n-title]').forEach(n => { const t = T(n.dataset.i18nTitle); n.title = t; n.setAttribute('aria-label', t); });
   const inp = $('#msgInput');
   if (inp) inp.placeholder = T('iaPh');
   $('#langCur').textContent = lang.toUpperCase().replace('-419', '').replace('-BR', '').replace('-ES', '');
@@ -89,6 +90,21 @@ function mdToHtml(src, live = false) {
     return `\u0000B${blocks.length - 1}\u0000`;
   });
   text = softBreaks(text);
+  /* tablas markdown: encabezado + separador + filas */
+  const tables = [];
+  text = text.replace(/(?:^|\n)((?:\|[^\n]*\n)+(?:\|[^\n]*))(?=\n|$)/g, (m0, block) => {
+    const rows = block.trim().split('\n').map(r => r.trim());
+    if (rows.length < 2) return m0;
+    const cells = r => r.replace(/^\|/, '').replace(/\|$/, '').split('|').map(c => c.trim());
+    const head = cells(rows[0]);
+    if (head.length < 2 || !/^\|?[\s:|-]+\|?$/.test(rows[1])) return m0;
+    const sep = cells(rows[1]);
+    if (sep.length !== head.length || !sep.every(c => /^:?-+:?$/.test(c))) return m0;
+    const inline = x => esc(x).replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>').replace(/`([^`\n]+)`/g, '<code class="inline">$1</code>');
+    const body = rows.slice(2).map(r => cells(r));
+    tables.push(`<div class="tbl-wrap"><table><thead><tr>${head.map(h2 => `<th>${inline(h2)}</th>`).join('')}</tr></thead><tbody>${body.map(r => `<tr>${head.map((_, i) => `<td>${inline(r[i] || '')}</td>`).join('')}</tr>`).join('')}</tbody></table></div>`);
+    return `\n\u0000T${tables.length - 1}\u0000\n`;
+  });
   let h = esc(text);
   h = h.replace(/`([^`\n]+)`/g, '<code class="inline">$1</code>');
   h = h.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
@@ -107,17 +123,40 @@ function mdToHtml(src, live = false) {
   h = h.split(/\n{2,}/).map(part => {
     const t = part.trim();
     if (!t) return '';
-    if (/^<(h\d|ul|ol|blockquote|hr|pre)|^\u0000B/.test(t)) return t;
+    if (/^<(h\d|ul|ol|blockquote|hr|pre)|^\u0000[BT]/.test(t)) return t;
     return `<p>${t.replace(/\n/g, '<br>')}</p>`;
   }).join('');
   h = h.replace(/\u0000B(\d+)\u0000/g, (m, i) => {
     const b = blocks[+i];
     if (!b) return '';
-    return `<div class="codeblock"><div class="cb-head"><span>${esc(b.lang)}</span><button class="cb-copy" data-code="${encodeURIComponent(b.code)}">${esc(T('iaCopy'))}</button></div><pre><code>${esc(b.code)}</code></pre></div>`;
+    const id = 'art' + (++artSeq);
+    artifacts.set(id, { title: b.lang || 'code', lang: b.lang, code: b.code });
+    return `<div class="codeblock"><div class="cb-head"><span>${esc(b.lang)}</span><span class="cb-actions"><button class="cb-copy" data-code="${encodeURIComponent(b.code)}">${esc(T('iaCopy'))}</button><button class="cb-art" data-art="${id}" title="${esc(T('iaArtOpen'))}" aria-label="${esc(T('iaArtOpen'))}">⛶</button></span></div><pre><code>${esc(b.code)}</code></pre></div>`;
   });
+  h = h.replace(/\u0000T(\d+)\u0000/g, (m, i) => tables[+i] || '');
   return h;
 }
 const rawTexts = new WeakMap(); // assistant content element → raw markdown
+
+/* ---------- artefactos + utilidades de archivos ---------- */
+const artifacts = new Map(); let artSeq = 0;
+const EXT_MAP = { js:'js', javascript:'js', ts:'ts', typescript:'ts', tsx:'tsx', jsx:'jsx', python:'py', py:'py', html:'html', css:'css', json:'json', md:'md', markdown:'md', bash:'sh', sh:'sh', shell:'sh', sql:'sql', java:'java', c:'c', cpp:'cpp', cs:'cs', go:'go', rs:'rs', rb:'rb', php:'php', yaml:'yml', yml:'yml', xml:'xml', svg:'svg' };
+function extFor(lang) { return EXT_MAP[(lang || '').toLowerCase()] || 'txt'; }
+function downloadText(name, text, mime) {
+  const blob = new Blob([text], { type: (mime || 'text/plain') + ';charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob); a.download = name;
+  document.body.appendChild(a); a.click();
+  setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 400);
+}
+function fileIcon(a) { return a.mime && a.mime.startsWith('image/') ? '🖼' : a.mime === 'application/pdf' ? '📕' : '📎'; }
+function fmtSize(n) { n = n || 0; return n >= 1048576 ? (n / 1048576).toFixed(1) + ' MB' : n >= 1024 ? Math.round(n / 1024) + ' KB' : n + ' B'; }
+function exportBtnState() {
+  const eb = $('#exportBtn');
+  if (!eb) return;
+  const has = state.incognito ? state.incognito.messages.length : (state.activeChat && state.activeChat.messages.length);
+  eb.hidden = !has;
+}
 
 /* ---------- sidebar ---------- */
 function fmtWhen(iso) {
@@ -130,11 +169,12 @@ function fmtWhen(iso) {
 function renderSide() {
   const list = $('#chatList');
   if (!list) return;
+  const pill = state.incognito ? `<div class="inc-pill"><span aria-hidden="true">🕶</span>${esc(T('iaIncBadge'))}</div>` : '';
   if (!state.chats.length) {
-    list.innerHTML = `<div class="side-empty"><div class="se-t">${esc(T('iaNoChats'))}</div><div class="se-b">${esc(T('iaNoChatsB'))}</div></div>`;
+    list.innerHTML = pill + `<div class="side-empty"><div class="se-t">${esc(T('iaNoChats'))}</div><div class="se-b">${esc(T('iaNoChatsB'))}</div></div>`;
     return;
   }
-  list.innerHTML = state.chats.map(c => `
+  list.innerHTML = pill + state.chats.map(c => `
     <button class="chat-item ${c.id === state.activeId ? 'sel' : ''}" data-id="${c.id}">
       <span class="ci-title">${esc(c.title)}</span>
       <span class="ci-sub">${c.preview ? esc(c.preview) : fmtWhen(c.updated)}</span>
@@ -217,31 +257,40 @@ function welcomeHtml() {
   </div>`;
 }
 
-function msgUserHtml(text) {
+function msgUserHtml(text, atts) {
   const initial = ((state.user && state.user.name) || '?').trim().charAt(0).toUpperCase();
+  const attsHtml = (atts && atts.length) ? `<div class="ua-atts">${atts.map(a => (a.mime && a.mime.startsWith('image/'))
+    ? `<a class="ua-imglink" href="${esc(a.url)}" target="_blank" rel="noopener"><img class="ua-img" src="${esc(a.url)}" alt="${esc(a.name)}" loading="lazy"></a>`
+    : `<a class="ua-file" href="${esc(a.url)}" target="_blank" rel="noopener"><span class="uf-ic" aria-hidden="true">${fileIcon(a)}</span><span class="uf-n">${esc(a.name)}</span><span class="uf-s">${fmtSize(a.size)}</span></a>`).join('')}</div>` : '';
   return `
   <div class="msg user">
     <div class="m-avatar">${esc(initial)}</div>
     <div class="m-col">
       <span class="m-who">${esc(T('iaYou'))}</span>
-      <div class="m-bubble">${esc(text)}</div>
+      ${attsHtml}
+      ${text ? `<div class="m-bubble">${esc(text)}</div>` : ''}
     </div>
   </div>`;
 }
 function msgAssistantHtml(content) {
   const has = !!content;
+  const acts = has ? `<div class="m-acts">
+      <button class="m-act" data-copy>${COPY_SVG}<span>${esc(T('iaCopy'))}</span></button>
+      <button class="m-act" data-retry aria-label="${esc(T('iaRetry'))}">↻<span>${esc(T('iaRetry'))}</span></button>
+      <button class="m-act" data-dlmsg aria-label="Markdown">⬇<span>.md</span></button>
+    </div>` : '';
   return `
   <div class="msg turing">
     <div class="m-avatar"><span class="dot"></span></div>
     <div class="m-col">
       <span class="m-who">Turing</span>
       <div class="m-content">${has ? mdToHtml(content) : `<span class="typing"><i></i><i></i><i></i></span>`}</div>
-      ${has ? `<div class="m-acts"><button class="m-act" data-copy>${COPY_SVG}<span>${esc(T('iaCopy'))}</span></button></div>` : ''}
+      ${acts}
     </div>
   </div>`;
 }
 function threadHtml(chat) {
-  const parts = chat.messages.map(m => m.role === 'user' ? msgUserHtml(m.content) : msgAssistantHtml(m.content));
+  const parts = chat.messages.map(m => m.role === 'user' ? msgUserHtml(m.content, m.attachments) : msgAssistantHtml(m.content));
   return `<div class="ia-scroll">${parts.join('')}</div>`;
 }
 
@@ -250,6 +299,15 @@ function nearBottom() { return iaBody.scrollHeight - iaBody.scrollTop - iaBody.c
 function scrollBottom(force) { if (force || nearBottom()) iaBody.scrollTop = iaBody.scrollHeight; }
 
 function renderMain() {
+  if (state.incognito) {
+    const msgs = state.incognito.messages;
+    const banner = `<div class="inc-banner" role="status"><span aria-hidden="true">🕶</span><span>${esc(T('iaIncBanner'))}</span></div>`;
+    iaBody.innerHTML = banner + (msgs.length
+      ? `<div class="ia-scroll">${msgs.map(m => m.role === 'user' ? msgUserHtml(m.content, m.attachments) : msgAssistantHtml(m.content)).join('')}</div>`
+      : welcomeHtml());
+    exportBtnState();
+    return;
+  }
   if (!state.activeId || !state.activeChat) {
     iaBody.innerHTML = welcomeHtml();
     $$('.sug', iaBody).forEach(b => b.addEventListener('click', () => {
@@ -273,6 +331,7 @@ function renderMain() {
 }
 
 async function openChat(id) {
+  state.incognito = null;
   state.activeId = id;
   state.activeChat = null;
   renderSide();
@@ -293,11 +352,14 @@ async function openChat(id) {
 /* ---------- composer / streaming ---------- */
 const input = $('#msgInput');
 const sendBtn = $('#sendBtn');
+const attachBtn = $('#attachBtn');
+const fileInput = $('#fileInput');
+const attachTray = $('#attachTray');
 
 function grow() {
   input.style.height = 'auto';
   input.style.height = Math.min(input.scrollHeight, 190) + 'px';
-  if (!state.streaming) sendBtn.disabled = !input.value.trim();
+  if (!state.streaming) sendBtn.disabled = !input.value.trim() && !state.pending.length;
 }
 input.addEventListener('input', grow);
 input.addEventListener('keydown', e => {
@@ -315,17 +377,66 @@ function setStreaming(on) {
   state.streaming = on;
   sendBtn.classList.toggle('stop-mode', on);
   sendBtn.setAttribute('aria-label', on ? T('iaStop') : T('iaSend'));
-  sendBtn.disabled = on ? false : !input.value.trim();
+  sendBtn.disabled = on ? false : !input.value.trim() && !state.pending.length;
 }
 
+/* ---------- adjuntos ---------- */
+attachBtn.addEventListener('click', () => fileInput.click());
+attachTray.addEventListener('click', e => {
+  const b = e.target.closest('[data-rmatt]');
+  if (!b) return;
+  state.pending.splice(+b.dataset.rmatt, 1);
+  renderTray();
+});
+fileInput.addEventListener('change', async () => {
+  const files = [...(fileInput.files || [])];
+  fileInput.value = '';
+  for (const f of files) {
+    if (state.pending.length >= 4) { appendError(T('iaTooManyFiles')); break; }
+    if (f.size > 5 * 1024 * 1024) { appendError(`${T('iaFileTooBig')}: ${f.name}`); continue; }
+    const chipId = 'up' + Date.now() + Math.floor(Math.random() * 1e6);
+    attachTray.hidden = false;
+    attachTray.insertAdjacentHTML('beforeend', `<span class="att-chip up" id="${chipId}"><span class="ac-ic" aria-hidden="true">⏳</span><span class="ac-n">${esc(f.name)}</span><span class="ac-s">${esc(T('iaUploading'))}</span></span>`);
+    try {
+      const data = await new Promise((res, rej) => {
+        const r = new FileReader();
+        r.onload = () => res(String(r.result).split(',')[1] || '');
+        r.onerror = () => rej(new Error('read'));
+        r.readAsDataURL(f);
+      });
+      const up = await fetchJSON('/api/upload', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: f.name, type: f.type || 'application/octet-stream', data }) });
+      state.pending.push({ name: up.name, url: up.url, mime: up.mime, size: up.size, text: up.text });
+    } catch (e2) {
+      appendError(e2.data && e2.data.error === 'bad_type' ? T('iaBadType') : e2.data && e2.data.error === 'too_big' ? T('iaFileTooBig') : T('iaUploadFail'));
+    }
+    renderTray();
+    grow();
+  }
+});
+function renderTray() {
+  if (!state.pending.length) { attachTray.hidden = true; attachTray.innerHTML = ''; return; }
+  attachTray.hidden = false;
+  attachTray.innerHTML = state.pending.map((a, i) => `
+    <span class="att-chip">
+      ${a.mime && a.mime.startsWith('image/') ? `<img src="${esc(a.url)}" alt="">` : `<span class="ac-ic" aria-hidden="true">${fileIcon(a)}</span>`}
+      <span class="ac-n" title="${esc(a.name)}">${esc(a.name)}</span>
+      <span class="ac-s">${fmtSize(a.size)}</span>
+      <button class="ac-x" data-rmatt="${i}" aria-label="✕">✕</button>
+    </span>`).join('');
+}
+
+/* ---------- envío (normal, incógnito y reintento comparten el streaming) ---------- */
 function ensureScroll() {
   let scroll = iaBody.querySelector('.ia-scroll');
-  if (!scroll) { iaBody.innerHTML = '<div class="ia-scroll"></div>'; scroll = iaBody.querySelector('.ia-scroll'); }
+  if (!scroll) {
+    iaBody.innerHTML = (state.incognito ? `<div class="inc-banner" role="status"><span aria-hidden="true">🕶</span><span>${esc(T('iaIncBanner'))}</span></div>` : '') + '<div class="ia-scroll"></div>';
+    scroll = iaBody.querySelector('.ia-scroll');
+  }
   return scroll;
 }
-function appendUser(text) {
+function appendUser(text, atts) {
   const scroll = ensureScroll();
-  scroll.insertAdjacentHTML('beforeend', msgUserHtml(text));
+  scroll.insertAdjacentHTML('beforeend', msgUserHtml(text, atts));
   scrollBottom(true);
 }
 function appendAssistantPlaceholder() {
@@ -342,16 +453,102 @@ function appendError(text) {
 function finalizeAssistant(contentEl, text) {
   contentEl.innerHTML = mdToHtml(text);
   rawTexts.set(contentEl, text);
-  contentEl.closest('.m-col').insertAdjacentHTML('beforeend',
-    `<div class="m-acts"><button class="m-act" data-copy>${COPY_SVG}<span>${esc(T('iaCopy'))}</span></button></div>`);
-  if (state.activeChat) state.activeChat.messages.push({ role: 'assistant', content: text, at: new Date().toISOString() });
+  contentEl.closest('.m-col').insertAdjacentHTML('beforeend', `<div class="m-acts">
+      <button class="m-act" data-copy>${COPY_SVG}<span>${esc(T('iaCopy'))}</span></button>
+      <button class="m-act" data-retry aria-label="${esc(T('iaRetry'))}">↻<span>${esc(T('iaRetry'))}</span></button>
+      <button class="m-act" data-dlmsg aria-label="Markdown">⬇<span>.md</span></button>
+    </div>`);
+  const store = state.incognito ? state.incognito.messages : (state.activeChat && state.activeChat.messages);
+  if (store) store.push({ role: 'assistant', content: text, at: new Date().toISOString() });
+  exportBtnState();
   scrollBottom(false);
+}
+
+/* streaming SSE compartido: pinta en contentEl y guarda la respuesta final */
+async function streamInto(url, body, contentEl) {
+  abortCtrl = new AbortController();
+  let acc = '';
+  let paintTimer = 0;
+  const PAINT_MS = 70;
+  const paintLive = () => {
+    paintTimer = 0;
+    contentEl.innerHTML = mdToHtml(acc, true) + '<span class="cursor"></span>';
+    scrollBottom(false);
+  };
+  const queuePaint = () => { if (!paintTimer) paintTimer = setTimeout(paintLive, PAINT_MS); };
+  const stopPaint = () => { if (paintTimer) { clearTimeout(paintTimer); paintTimer = 0; } };
+  let upstreamErr = false;
+  try {
+    const resp = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), signal: abortCtrl.signal });
+    if (!resp.ok) {
+      const j = await resp.json().catch(() => ({}));
+      const msg = contentEl.closest('.msg'); if (msg) msg.remove();
+      if (resp.status === 429) $('#limitModal').hidden = false;
+      else if (j.error === 'not_configured') appendError(T('iaErrNoKey'));
+      else appendError(j.error === 'maintenance' ? T('iaErrUpstream') : T('iaErrGeneric'));
+      return null;
+    }
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = '';
+    for (;;) {
+      const { value, done } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      let idx;
+      while ((idx = buf.indexOf('\n')) >= 0) {
+        const line = buf.slice(0, idx).trim();
+        buf = buf.slice(idx + 1);
+        if (!line.startsWith('data:')) continue;
+        let ev; try { ev = JSON.parse(line.slice(5)); } catch { continue; }
+        if (ev.title && !state.incognito) {
+          const c = state.chats.find(x => x.id === state.activeId);
+          const changed = !c || c.title !== ev.title;
+          if (c) { c.title = ev.title; c.preview = body.content || ''; }
+          if (state.activeChat) state.activeChat.title = ev.title;
+          if (changed) renderSide();
+        }
+        if (ev.content) { acc += ev.content; queuePaint(); }
+        if (ev.error) upstreamErr = true;
+      }
+    }
+    stopPaint();
+    const msg = contentEl.closest('.msg');
+    if (upstreamErr) { if (msg) msg.remove(); appendError(T('iaErrUpstream')); return null; }
+    if (!acc) { if (msg) msg.remove(); appendError(T('iaErrGeneric')); return null; }
+    finalizeAssistant(contentEl, acc);
+    return acc;
+  } catch (e) {
+    stopPaint();
+    if (e.name === 'AbortError') {
+      if (acc) { finalizeAssistant(contentEl, acc); return acc; }
+      const msg = contentEl.closest('.msg'); if (msg) msg.remove();
+      return null;
+    }
+    const msg = contentEl.closest('.msg'); if (msg) msg.remove();
+    appendError(T('iaErrGeneric'));
+    return null;
+  }
 }
 
 async function send() {
   const text = input.value.trim();
-  if (!text || state.streaming) return;
+  const atts = state.pending.map(a => ({ ...a }));
+  if ((!text && !atts.length) || state.streaming) return;
   input.value = ''; grow();
+  state.pending = []; renderTray();
+
+  if (state.incognito) {
+    const umsg = { role: 'user', content: text, at: new Date().toISOString() };
+    if (atts.length) umsg.attachments = atts;
+    state.incognito.messages.push(umsg);
+    appendUser(text, atts);
+    const contentEl = appendAssistantPlaceholder();
+    setStreaming(true);
+    try { await streamInto('/api/incognito/messages', { content: text, attachments: atts }, contentEl); }
+    finally { setStreaming(false); setTimeout(() => input.focus(), 30); }
+    return;
+  }
 
   if (!state.activeId) {
     try {
@@ -364,92 +561,51 @@ async function send() {
     } catch { appendError(T('iaErrGeneric')); return; }
   }
 
-  appendUser(text);
-  state.activeChat.messages.push({ role: 'user', content: text, at: new Date().toISOString() });
+  appendUser(text, atts);
+  const umsg = { role: 'user', content: text, at: new Date().toISOString() };
+  if (atts.length) umsg.attachments = atts.map(a => ({ name: a.name, url: a.url, mime: a.mime, size: a.size, text: a.text }));
+  state.activeChat.messages.push(umsg);
+  exportBtnState();
 
   const contentEl = appendAssistantPlaceholder();
   setStreaming(true);
-  abortCtrl = new AbortController();
-  let acc = '';
-  let paintTimer = 0;
-  const PAINT_MS = 70; // repinta como máximo ~14 veces/s: texto fluido y hilo principal ligero
-  const paintLive = () => {
-    paintTimer = 0;
-    contentEl.innerHTML = mdToHtml(acc, true) + '<span class="cursor"></span>';
-    scrollBottom(false);
-  };
-  const queuePaint = () => { if (!paintTimer) paintTimer = setTimeout(paintLive, PAINT_MS); };
-  const stopPaint = () => { if (paintTimer) { clearTimeout(paintTimer); paintTimer = 0; } };
-
   try {
-    const resp = await fetch(`/api/chats/${state.activeId}/messages`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content: text }),
-      signal: abortCtrl.signal,
-    });
-    if (!resp.ok) {
-      const j = await resp.json().catch(() => ({}));
-      const msg = contentEl.closest('.msg'); if (msg) msg.remove();
-      if (resp.status === 429) $('#limitModal').hidden = false;
-      else if (j.error === 'not_configured') appendError(T('iaErrNoKey'));
-      else appendError(j.error === 'maintenance' ? T('iaErrUpstream') : T('iaErrGeneric'));
-      setStreaming(false);
-      return;
-    }
-    const reader = resp.body.getReader();
-    const dec = new TextDecoder();
-    let buf = '';
-    let upstreamErr = false;
-    for (;;) {
-      const { value, done } = await reader.read();
-      if (done) break;
-      buf += dec.decode(value, { stream: true });
-      let idx;
-      while ((idx = buf.indexOf('\n')) >= 0) {
-        const line = buf.slice(0, idx).trim();
-        buf = buf.slice(idx + 1);
-        if (!line.startsWith('data:')) continue;
-        let ev; try { ev = JSON.parse(line.slice(5)); } catch { continue; }
-        if (ev.title) {
-          const c = state.chats.find(x => x.id === state.activeId);
-          const changed = !c || c.title !== ev.title;
-          if (c) { c.title = ev.title; c.preview = text; }
-          if (state.activeChat) state.activeChat.title = ev.title;
-          if (changed) renderSide();
-        }
-        if (ev.content) {
-          acc += ev.content;
-          queuePaint();
-        }
-        if (ev.error) upstreamErr = true;
-      }
-    }
-    stopPaint();
-    const msg = contentEl.closest('.msg');
-    if (upstreamErr) {
-      if (msg) msg.remove();
-      appendError(T('iaErrUpstream'));
-    } else if (acc) {
-      finalizeAssistant(contentEl, acc);
-    } else {
-      if (msg) msg.remove();
-      appendError(T('iaErrGeneric'));
-    }
-  } catch (e) {
-    stopPaint();
-    if (e.name === 'AbortError') {
-      if (acc) finalizeAssistant(contentEl, acc);
-      else { const msg = contentEl.closest('.msg'); if (msg) msg.remove(); }
-    } else {
-      const msg = contentEl.closest('.msg'); if (msg) msg.remove();
-      appendError(T('iaErrGeneric'));
-    }
+    await streamInto(`/api/chats/${state.activeId}/messages`, { content: text, attachments: atts }, contentEl);
   } finally {
     setStreaming(false);
     refreshChats();
     setTimeout(() => input.focus(), 30);
   }
+}
+
+/* reintentar la última respuesta */
+async function retryFrom(msgEl) {
+  if (!msgEl || state.streaming) return;
+  const scroll = iaBody.querySelector('.ia-scroll');
+  if (!scroll || scroll.lastElementChild !== msgEl || !msgEl.classList.contains('turing')) return;
+
+  if (state.incognito) {
+    const msgs = state.incognito.messages;
+    if (msgs.length && msgs[msgs.length - 1].role === 'assistant') msgs.pop();
+    const lastU = [...msgs].reverse().find(m => m.role === 'user');
+    if (!lastU) return;
+    const atts = (lastU.attachments || []).map(a => ({ ...a }));
+    msgEl.remove();
+    const contentEl = appendAssistantPlaceholder();
+    setStreaming(true);
+    try { await streamInto('/api/incognito/messages', { content: lastU.content, attachments: atts }, contentEl); }
+    finally { setStreaming(false); }
+    return;
+  }
+
+  if (!state.activeId || !state.activeChat) return;
+  const m2 = state.activeChat.messages;
+  if (m2.length && m2[m2.length - 1].role === 'assistant') m2.pop();
+  msgEl.remove();
+  const contentEl = appendAssistantPlaceholder();
+  setStreaming(true);
+  try { await streamInto(`/api/chats/${state.activeId}/retry`, {}, contentEl); }
+  finally { setStreaming(false); refreshChats(); }
 }
 
 async function refreshChats() {
@@ -460,7 +616,7 @@ async function refreshChats() {
   } catch {}
 }
 
-/* ---------- delegated actions (copy) ---------- */
+/* ---------- acciones delegadas (copiar, artefactos, retry, descargar) ---------- */
 iaBody.addEventListener('click', async e => {
   const cb = e.target.closest('.cb-copy');
   if (cb) {
@@ -470,6 +626,8 @@ iaBody.addEventListener('click', async e => {
     setTimeout(() => { cb.textContent = old; }, 1400);
     return;
   }
+  const art = e.target.closest('.cb-art');
+  if (art) { openArtifact(art.dataset.art); return; }
   const cp = e.target.closest('[data-copy]');
   if (cp) {
     const col = cp.closest('.m-col');
@@ -478,7 +636,59 @@ iaBody.addEventListener('click', async e => {
     try { await navigator.clipboard.writeText(raw); } catch {}
     const lbl = cp.querySelector('span');
     if (lbl) { lbl.textContent = T('iaCopied'); setTimeout(() => { lbl.textContent = T('iaCopy'); }, 1400); }
+    return;
   }
+  const rp = e.target.closest('[data-retry]');
+  if (rp) { retryFrom(rp.closest('.msg')); return; }
+  const dm = e.target.closest('[data-dlmsg]');
+  if (dm) {
+    const col = dm.closest('.m-col');
+    const contentEl = col ? col.querySelector('.m-content') : null;
+    const raw = (contentEl && rawTexts.get(contentEl)) || (contentEl ? contentEl.textContent : '');
+    downloadText('turing-message.md', raw, 'text/markdown');
+  }
+});
+
+/* ---------- artefactos: panel lateral ---------- */
+function openArtifact(id) {
+  const a = artifacts.get(id);
+  if (!a) return;
+  $('#artTitle').textContent = `${a.lang || 'code'} · ${a.code.split('\n').length} ln · ${fmtSize(a.code.length)}`;
+  $('#artBody').textContent = a.code;
+  const dl = $('#artDl');
+  dl.dataset.name = `turing-${(a.lang || 'code').replace(/[^\w-]/g, '') || 'code'}.${extFor(a.lang)}`;
+  dl.dataset.code = encodeURIComponent(a.code);
+  $('#artPanel').hidden = false;
+  $('#artScrim').hidden = false;
+}
+function closeArtifact() { $('#artPanel').hidden = true; $('#artScrim').hidden = true; }
+$('#artClose').addEventListener('click', closeArtifact);
+$('#artScrim').addEventListener('click', closeArtifact);
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('#artPanel').hidden) closeArtifact(); });
+$('#artCopy').addEventListener('click', async () => {
+  try {
+    await navigator.clipboard.writeText(decodeURIComponent($('#artDl').dataset.code || ''));
+    const btn = $('#artCopy'); const old = btn.textContent;
+    btn.textContent = T('iaCopied');
+    setTimeout(() => { btn.textContent = old; }, 1400);
+  } catch {}
+});
+$('#artDl').addEventListener('click', () => {
+  const d = $('#artDl');
+  downloadText(d.dataset.name || 'artifact.txt', decodeURIComponent(d.dataset.code || ''));
+});
+
+/* ---------- exportar chat ---------- */
+$('#exportBtn').addEventListener('click', () => {
+  let msgs, title;
+  if (state.incognito) { msgs = state.incognito.messages; title = T('iaIncBadge'); }
+  else if (state.activeChat) { msgs = state.activeChat.messages; title = state.activeChat.title || 'Turing'; }
+  if (!msgs || !msgs.length) return;
+  const fname = 'turing-' + String(title).replace(/[^\w-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40).toLowerCase() + '.md';
+  const md = `# ${title}\n\n` + msgs.map(m => m.role === 'user'
+    ? `## ${T('iaYou')}\n\n${m.content || ''}${(m.attachments || []).map(a => `\n\n📎 ${a.name} (${a.url})`).join('')}`
+    : `## Turing\n\n${m.content}`).join('\n\n---\n\n');
+  downloadText(fname, md, 'text/markdown');
 });
 
 /* ---------- modal / new chat / mobile ---------- */
@@ -487,6 +697,7 @@ $('#limitModal').addEventListener('click', e => { if (e.target === $('#limitModa
 
 $('#newChatBtn').addEventListener('click', () => {
   if (state.streaming) return;
+  state.incognito = null;
   state.activeId = null;
   state.activeChat = null;
   renderSide();
@@ -497,6 +708,16 @@ $('#newChatBtn').addEventListener('click', () => {
 function closeSideMobile() {
   if (innerWidth <= 880) { $('#iaSide').classList.remove('open'); $('#scrim').hidden = true; }
 }
+$('#incBtn').addEventListener('click', () => {
+  if (state.streaming) return;
+  state.incognito = { messages: [] };
+  state.activeId = null;
+  state.activeChat = null;
+  renderSide();
+  renderMain();
+  closeSideMobile();
+  setTimeout(() => input.focus(), 40);
+});
 $('#sideBtn').addEventListener('click', () => {
   const side = $('#iaSide');
   const open = side.classList.toggle('open');
@@ -522,6 +743,11 @@ $('#scrim').addEventListener('click', closeSideMobile);
   $('#sideAva').textContent = initial;
   $('#topAvaLetter').textContent = initial;
   $('#sideName').textContent = state.user.name;
+  if (state.user.avatar) {
+    const img = `<img src="${esc(state.user.avatar)}" alt="">`;
+    $('#sideAva').innerHTML = img;
+    $('#topAvaLetter').innerHTML = img;
+  }
 
   applyStaticI18n();
   buildLangMenu();

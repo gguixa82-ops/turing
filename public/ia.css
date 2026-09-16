@@ -182,7 +182,7 @@ button { font-family: inherit; cursor: pointer; }
   max-width: 780px; margin: 0 auto; position: relative;
   background: var(--bg-3); border: 1px solid var(--line-2); border-radius: 24px;
   transition: border-color .2s, box-shadow .2s;
-  display: flex; align-items: flex-end; gap: 10px; padding: 10px 10px 10px 20px;
+  display: flex; align-items: flex-end; gap: 10px; padding: 10px 10px 10px 12px;
 }
 .composer:focus-within { border-color: rgba(255,255,255,0.34); box-shadow: 0 0 0 4px rgba(255,255,255,0.05); }
 .composer textarea {
@@ -232,4 +232,61 @@ button { font-family: inherit; cursor: pointer; }
 }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; }
+}
+
+/* ---------- tablas markdown ---------- */
+.tbl-wrap { overflow-x: auto; margin: 14px 0; border: 1px solid var(--line-2); border-radius: 12px; background: rgba(255,255,255,0.015); }
+.tbl-wrap table { border-collapse: collapse; width: 100%; font-size: 13.5px; }
+.tbl-wrap th, .tbl-wrap td { padding: 9px 14px; text-align: left; border-bottom: 1px solid var(--line); white-space: nowrap; }
+.tbl-wrap th { background: rgba(255,255,255,0.045); color: var(--white); font-weight: 700; }
+.tbl-wrap tbody tr:last-child td { border-bottom: 0; }
+.tbl-wrap tbody tr:hover { background: rgba(255,255,255,0.025); }
+
+/* ---------- adjuntos en mensajes ---------- */
+.ua-atts { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.ua-img { display: block; max-width: 240px; max-height: 180px; border-radius: 12px; border: 1px solid var(--line-2); }
+.ua-file { display: inline-flex; align-items: center; gap: 8px; background: var(--bg-4); border: 1px solid var(--line); border-radius: 12px; padding: 8px 12px; font-size: 12.5px; color: var(--text-2); transition: color .15s, border-color .15s; }
+.ua-file:hover { border-color: var(--line-2); color: var(--white); }
+.uf-n { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.uf-s { color: var(--text-4); font-size: 11px; }
+
+/* ---------- bandeja de adjuntos del composer ---------- */
+.attach-tray { max-width: 780px; margin: 0 auto 8px; display: flex; flex-wrap: wrap; gap: 8px; }
+.att-chip { display: inline-flex; align-items: center; gap: 8px; background: var(--bg-3); border: 1px solid var(--line-2); border-radius: 12px; padding: 6px 8px 6px 6px; font-size: 12.5px; color: var(--text-2); }
+.att-chip img { width: 30px; height: 30px; object-fit: cover; border-radius: 8px; }
+.att-chip.up { opacity: .6; }
+.ac-ic { display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: var(--bg-4); font-size: 14px; }
+.ac-n { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ac-s { color: var(--text-4); font-size: 11px; }
+.ac-x { background: none; border: 0; color: var(--text-3); cursor: pointer; font-size: 12px; padding: 3px 5px; border-radius: 6px; }
+.ac-x:hover { color: var(--white); background: rgba(255,255,255,0.08); }
+.attach-btn { flex: none; width: 38px; height: 38px; border-radius: 12px; background: none; border: 1px solid var(--line); color: var(--text-3); display: grid; place-items: center; align-self: center; transition: color .15s, border-color .15s; }
+.attach-btn:hover { color: var(--white); border-color: var(--line-2); }
+
+/* ---------- chat incógnito ---------- */
+.inc-btn { width: 100%; display: flex; align-items: center; gap: 10px; background: none; border: 1px dashed var(--line); color: var(--text-3); font-size: 12.5px; font-weight: 600; padding: 10px 15px; border-radius: 13px; margin-top: 8px; transition: color .15s, border-color .15s; }
+.inc-btn:hover { color: var(--text); border-color: var(--line-2); }
+.inc-banner { max-width: 780px; margin: 18px auto 0; display: flex; gap: 10px; align-items: center; background: rgba(232,176,75,0.07); border: 1px solid rgba(232,176,75,0.25); color: #E8C983; font-size: 12.5px; line-height: 1.5; padding: 10px 16px; border-radius: 12px; }
+.inc-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 800; letter-spacing: .07em; text-transform: uppercase; color: var(--amber); background: rgba(232,176,75,0.08); border: 1px solid rgba(232,176,75,0.3); padding: 3px 9px; border-radius: 999px; margin: 0 0 10px 8px; }
+
+/* ---------- panel de artefactos ---------- */
+.art-scrim { position: fixed; inset: 0; z-index: 110; background: rgba(0,0,0,0.55); }
+.art-panel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 120; width: min(560px, 92vw); background: #0D0D0F; border-left: 1px solid var(--line-2); display: flex; flex-direction: column; box-shadow: -30px 0 80px rgba(0,0,0,0.5); }
+.art-head { display: flex; align-items: center; gap: 10px; padding: 13px 16px; border-bottom: 1px solid var(--line); }
+.art-badge { font-size: 9.5px; font-weight: 800; letter-spacing: .1em; color: #0A0A0A; background: var(--white); border-radius: 6px; padding: 3px 7px; flex: none; }
+.art-title { flex: 1; font-size: 12.5px; font-weight: 600; color: var(--text-2); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.art-actions { display: flex; gap: 6px; }
+.art-btn { background: none; border: 1px solid var(--line); color: var(--text-3); font-size: 12px; font-weight: 600; padding: 5px 10px; border-radius: 8px; cursor: pointer; font-family: inherit; transition: color .15s, border-color .15s; }
+.art-btn:hover { color: var(--white); border-color: var(--line-2); }
+.art-body { flex: 1; overflow: auto; margin: 0; padding: 18px 20px; font-family: var(--mono); font-size: 13px; line-height: 1.65; color: #DCDCE1; white-space: pre; }
+.cb-actions { display: inline-flex; gap: 4px; align-items: center; }
+.cb-art { background: none; border: 0; color: var(--text-3); cursor: pointer; font-size: 13px; line-height: 1; padding: 3px 8px; border-radius: 6px; transition: color .15s, background .15s; }
+.cb-art:hover { color: var(--white); background: rgba(255,255,255,0.08); }
+
+/* ---------- misc ---------- */
+.top-icon { background: none; border: 1px solid var(--line); color: var(--text-3); width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; cursor: pointer; transition: color .15s, border-color .15s; }
+.top-icon:hover { color: var(--white); border-color: var(--line-2); }
+.avatar img { width: 100%; height: 100%; border-radius: 50%; object-fit: cover; display: block; }
+@media (max-width: 880px) {
+  .art-panel { width: 100vw; border-left: 0; }
 }

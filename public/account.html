@@ -10,7 +10,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/account.css?v=5">
+  <link rel="stylesheet" href="/account.css?v=6">
   <link rel="stylesheet" href="/veil.css?v=3">
 </head>
 <body>
@@ -42,8 +42,15 @@
     <main class="acc-main">
       <!-- profile header -->
       <div class="acc-hero">
-        <div class="hero-ava"><span id="accAva">·</span></div>
+        <div class="hero-ava-wrap">
+          <div class="hero-ava" id="accAvaWrap"><span id="accAva">·</span></div>
+          <button class="ava-edit" id="avaBtn" data-i18n-title="accAvatarBtn" aria-label="Change avatar" title="Change avatar">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+          </button>
+          <input type="file" id="avaInput" hidden accept="image/png,image/jpeg,image/webp">
+        </div>
         <div class="hero-id">
+          <span class="ava-hint" id="avaMsg" role="status" hidden></span>
           <h1 id="accName">…</h1>
           <div class="hero-mail" id="accEmail"></div>
           <div class="hero-meta">
@@ -71,8 +78,18 @@
           </div>
         </section>
 
+        <!-- statistics -->
+        <section class="card card-stats" style="--i:1">
+          <div class="c-head"><h2 data-i18n="accStatsT">Statistics</h2></div>
+          <div class="stat-grid">
+            <div class="stat-box"><span class="st-n" id="stChats">0</span><span class="st-l" data-i18n="accStatChats">Chats</span></div>
+            <div class="stat-box"><span class="st-n" id="stMsgs">0</span><span class="st-l" data-i18n="accStatMsgs">Messages</span></div>
+          </div>
+          <p class="card-sub" data-i18n="accStatsSub">All-time totals for your account.</p>
+        </section>
+
         <!-- plan -->
-        <section class="card" style="--i:1">
+        <section class="card" style="--i:2">
           <div class="c-head"><h2 data-i18n="accPlan">Plan</h2></div>
           <div class="plan-row"><span class="plan-badge" id="planBadge" data-i18n="accPlanFree">Free</span></div>
           <p class="card-body" data-i18n="accPlanDesc">You are on the Free plan.</p>
@@ -80,7 +97,7 @@
         </section>
 
         <!-- profile data -->
-        <section class="card" style="--i:2">
+        <section class="card" style="--i:3">
           <div class="c-head"><h2 data-i18n="accProfile">Profile</h2></div>
           <div class="kv"><span data-i18n="accName">Name</span><b id="kvName">—</b></div>
           <div class="kv"><span data-i18n="accEmail">Email</span><b id="kvEmail">—</b></div>
@@ -88,7 +105,7 @@
         </section>
 
         <!-- security -->
-        <section class="card" style="--i:3">
+        <section class="card" style="--i:4">
           <div class="c-head"><h2 data-i18n="accSecurity">Security</h2></div>
           <form id="passForm" novalidate>
             <div class="field"><label for="p-cur" data-i18n="accCurPass">Current password</label><input id="p-cur" type="password" autocomplete="current-password"></div>
@@ -124,8 +141,8 @@
     </div>
   </div>
 
-  <script src="/i18n.js?v=12"></script>
+  <script src="/i18n.js?v=13"></script>
   <script src="/veil.js?v=5"></script>
-  <script src="/account.js?v=5"></script>
+  <script src="/account.js?v=6"></script>
 </body>
 </html>
