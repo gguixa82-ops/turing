@@ -542,6 +542,7 @@ input, select, textarea { font-family: inherit; }
 .auth-card .a-sub { font-size: 14.5px; color: var(--text-2); margin-bottom: 30px; line-height: 1.55; }
 .auth-card .a-alt { margin-top: 26px; text-align: center; font-size: 14px; color: var(--text-3); }
 .auth-card .a-alt a { color: var(--text); font-weight: 600; border-bottom: 1px solid var(--line-2); padding-bottom: 1px; transition: border-color .2s; }
+.auth-card .field.invalid input { border-color: rgba(224,106,90,0.65); background: rgba(224,106,90,0.05); }
 .auth-card .a-alt a:hover { border-color: var(--white); }
 .banner {
   display: flex; gap: 12px; align-items: flex-start;

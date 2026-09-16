@@ -759,7 +759,7 @@ function onLogin() {
         state.user = r.user;
         renderHeader();
         const next = new URLSearchParams(location.search).get('next') || '';
-        if (next.startsWith('/') && !next.startsWith('//')) {
+        if (next.startsWith('/') && !next.startsWith('//') && !next.includes('\\')) {
           withTransition(() => { if (window.TuringVeil) TuringVeil.markNavigated(); location.assign(next); });
         } else {
           withTransition(() => { history.pushState({}, '', '/'); return renderRoute('/'); });
@@ -833,7 +833,10 @@ function onReset() {
   form.addEventListener('submit', e => {
     e.preventDefault();
     const email = $('#rt-email').value.trim();
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return;
+    const field = form.querySelector('.field');
+    const valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+    field.classList.toggle('invalid', !valid);
+    if (!valid) return;
     const card = form.closest('.auth-card');
     asyncSubmit(form.querySelector('button[type=submit]'), async () => {
       const r = await fetchJSON('/api/auth/reset', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
@@ -1154,7 +1157,8 @@ async function refreshSite() {
 async function renderRoute(path, { instant = false } = {}) {
   const route = matchRoute(String(path).split('?')[0]);
   state.route = route.view;
-  document.title = T(route.titleKey);
+  // titlePost/titleDoc llevan {t}: mientras carga el contenido usar el genérico
+  document.title = route.titleKey === 'titlePost' ? T('titleResearch') : route.titleKey === 'titleDoc' ? T('titleDocs') : T(route.titleKey);
   await refreshSite().catch(() => {}); // esperar el estado del sitio: sin carreras al pintar
   if (state.site && state.site.maintenance) return; // refreshSite ya pintó el modo mantenimiento
   renderHeader();

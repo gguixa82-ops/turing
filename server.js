@@ -110,8 +110,9 @@ function logActivity(text) {
 
 const SESSION_TTL = 7 * 24 * 3600 * 1000;
 
-function setSessionCookie(res, token) {
-  res.setHeader('Set-Cookie', `turing_session=${token}; HttpOnly; Path=/; Max-Age=${SESSION_TTL / 1000}; SameSite=Lax`);
+function setSessionCookie(req, res, token) {
+  const https = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
+  res.setHeader('Set-Cookie', `turing_session=${token}; HttpOnly; Path=/; Max-Age=${SESSION_TTL / 1000}; SameSite=Lax${https ? '; Secure' : ''}`);
 }
 function clearSessionCookie(res) {
   res.setHeader('Set-Cookie', 'turing_session=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax');
@@ -396,7 +397,8 @@ function rateLimited(req, bucket, max, windowMs) {
 async function handleApi(req, res, url) {
   const p = url.pathname.replace(/\/+$/, '');
   const m = req.method;
-  const origin = `${req.headers['x-forwarded-proto'] || 'http'}://${req.headers.host}`;
+  // si config.json define site_url, manda (evita el envenenamiento del Host en los enlaces de email)
+  const origin = (String(cfg.site_url || '').trim().replace(/\/+$/, '')) || `${req.headers['x-forwarded-proto'] || 'http'}://${req.headers.host}`;
 
   // ---- public site flags ----
   if (m === 'GET' && p === '/api/site') {
@@ -456,7 +458,8 @@ async function handleApi(req, res, url) {
     const ageBracket = String(b.ageBracket || '').slice(0, 12);
     const useCases = Array.isArray(b.useCases) ? b.useCases.filter(x => typeof x === 'string').slice(0, 8).map(x => x.slice(0, 30)) : [];
     const acceptedTerms = b.acceptedTerms === true;
-    if (!ageBracket || !acceptedTerms) return json(res, 400, { error: 'invalid', message: 'Age and terms acceptance are required.' });
+    const ageN = /^\d{1,3}$/.test(ageBracket) ? parseInt(ageBracket, 10) : 0;
+    if (!ageN || ageN < 13 || ageN > 120 || !acceptedTerms) return json(res, 400, { error: 'invalid', message: 'A valid age (13+) and terms acceptance are required.' });
     u.onboard = { ...(u.onboard || {}), ageBracket, useCases, acceptedTerms, at: new Date().toISOString() };
     logActivity(`Onboarding completed: ${u.name}`);
     return json(res, 200, { ok: true, onboard: u.onboard });
@@ -619,7 +622,7 @@ async function handleApi(req, res, url) {
     const r = await sendEmail({ to: email, subject: 'Welcome to Turing', html: welcomeEmail(name, origin) });
     if (!r.ok) console.log('[email] welcome not delivered:', r.reason);
     const token = createSession('user', user.id);
-    setSessionCookie(res, token);
+    setSessionCookie(req, res, token);
     return json(res, 201, { ok: true, email: r.ok ? 'delivered' : 'pending', user: { name, email } });
   }
 
@@ -637,7 +640,7 @@ async function handleApi(req, res, url) {
     u.lastLogin = new Date().toISOString();
     logActivity(`User login: ${u.name}`);
     const token = createSession('user', u.id);
-    setSessionCookie(res, token);
+    setSessionCookie(req, res, token);
     return json(res, 200, { ok: true, user: { name: u.name, email: u.email } });
   }
 
@@ -680,7 +683,7 @@ async function handleApi(req, res, url) {
     const u = db.users.find(x => x.email === t.email);
     if (!u) return json(res, 400, { error: 'expired', message: 'This reset link is no longer valid.' });
     u.salt = newSalt(); u.passHash = hashPw(password, u.salt);
-    delete db.resets[token];
+    for (const tk of Object.keys(db.resets)) if (db.resets[tk].email === u.email) delete db.resets[tk];
     killUserSessions(u.id); // la nueva contraseña invalida sesiones abiertas en otros dispositivos
     logActivity(`Password reset completed: ${u.name}`);
     return json(res, 200, { ok: true });
@@ -696,7 +699,7 @@ async function handleApi(req, res, url) {
     if (un !== db.admin.username || hashPw(pw, db.admin.salt) !== db.admin.passHash) return json(res, 401, { error: 'invalid', message: 'Invalid credentials.' });
     rateMap.delete('adminfail|' + clientIp(req));
     const token = createSession('admin', 'admin');
-    setSessionCookie(res, token);
+    setSessionCookie(req, res, token);
     logActivity('Admin login');
     return json(res, 200, { ok: true });
   }
@@ -970,6 +973,7 @@ const server = http.createServer(async (req, res) => {
 
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' data: https:; media-src 'self' https:; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; script-src 'self'; connect-src 'self'; base-uri 'self'; form-action 'self'");
     if (p.startsWith('/api/')) return await handleApi(req, res, url);
 
     if (req.method !== 'GET' && req.method !== 'HEAD') { res.writeHead(405); return res.end(); }

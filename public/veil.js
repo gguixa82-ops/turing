@@ -73,7 +73,7 @@
     const a = ev.target.closest ? ev.target.closest('a[href]') : null;
     if (!a) return;
     const href = a.getAttribute('href');
-    if (!href || !href.startsWith('/') || href.startsWith('//')) return;
+    if (!href || !href.startsWith('/') || href.startsWith('//') || href.includes('\\')) return;
     if (a.target === '_blank' || a.hasAttribute('download')) return;
     ev.preventDefault();
     show().then(() => { markNavigated(); location.assign(href); });
