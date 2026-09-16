@@ -49,6 +49,16 @@
 
   window.TuringVeil = { show, hide, markNavigated };
 
+  // volver/adelante desde la caché del navegador (bfcache): la página puede
+  // restaurarse CON el veil puesto si se navegó cubierto -> quitarlo siempre
+  window.addEventListener('pageshow', ev => {
+    if (!ev.persisted) return;
+    clearTimeout(hideTimer);
+    shownAt = null;
+    const e = el();
+    if (e) e.classList.remove('on');
+  });
+
   // red de seguridad: si la app falla y nadie quita el veil tras cargar, revelarlo
   window.addEventListener('load', () => setTimeout(() => {
     const e = el();

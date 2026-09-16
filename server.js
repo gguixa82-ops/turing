@@ -527,6 +527,7 @@ async function handleApi(req, res, url) {
   if (m === 'POST' && p === '/api/chats') {
     const u = requireUser(req);
     if (!u) return json(res, 401, { error: 'unauthorized' });
+    if ((db.chats[u.id] || []).length >= 60) return json(res, 429, { error: 'too_many_chats', message: 'You have reached the maximum number of chats. Delete some to start new ones.' });
     const now = new Date().toISOString();
     const chat = { id: crypto.randomBytes(6).toString('hex'), title: 'New chat', created: now, updated: now, messages: [] };
     db.chats[u.id] = db.chats[u.id] || [];

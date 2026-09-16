@@ -265,12 +265,12 @@ function renderAnnounce() {
   const a = el('#announce');
   const ann = state.site && state.site.announcement;
   if (!ann || !ann.enabled || !ann.text) { a.hidden = true; a.innerHTML = ''; return; }
-  if (sessionStorage.getItem('turing_announce_dismissed')) { a.hidden = true; return; }
+  if (sessionStorage.getItem('turing_announce_dismissed') === ann.text) { a.hidden = true; return; }
   a.hidden = false;
   a.innerHTML = `<span class="dot"></span><span>${esc(ann.text)}</span><button class="a-close" aria-label="${esc(T('dismiss'))}">×</button>`;
   a.querySelector('.a-close').addEventListener('click', () => {
     a.hidden = true;
-    sessionStorage.setItem('turing_announce_dismissed', '1');
+    sessionStorage.setItem('turing_announce_dismissed', ann.text);
   });
 }
 
@@ -348,7 +348,10 @@ function postCard(p, i, baseDelay = 0) {
 async function fillResearch(append) {
   const grid = el('#researchGrid');
   if (!grid) return;
-  if (!state.researchList) state.researchList = (await fetchJSON('/api/research')).posts;
+  if (!state.researchList) {
+    try { state.researchList = (await fetchJSON('/api/research')).posts; }
+    catch { return; }
+  }
   const start = append ? state.researchShown : 0;
   const slice = state.researchList.slice(start, start + BATCH);
   grid.insertAdjacentHTML('beforeend', slice.map((p, i) => postCard(p, i, append ? 0.05 : 0)).join(''));
@@ -1148,11 +1151,12 @@ async function refreshSite() {
   }
 }
 
-function renderRoute(path, { instant = false } = {}) {
+async function renderRoute(path, { instant = false } = {}) {
   const route = matchRoute(String(path).split('?')[0]);
   state.route = route.view;
   document.title = T(route.titleKey);
-  refreshSite();
+  await refreshSite().catch(() => {}); // esperar el estado del sitio: sin carreras al pintar
+  if (state.site && state.site.maintenance) return; // refreshSite ya pintó el modo mantenimiento
   renderHeader();
   renderFooter();
 
