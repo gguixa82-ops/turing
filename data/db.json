@@ -1,177 +1,12 @@
 {
-  "users": [
-    {
-      "id": "685e0f9fd56349ec",
-      "name": "Thread Test",
-      "email": "thread1789477018713@test.com",
-      "salt": "d7e6a68e800eec2060b6ae4de7c50cc1",
-      "passHash": "f3a03b0d4b9c185b6c281c29179aaf9a22a12f657428c8590199607573d52736c16741973cae962e32dabc9f5358514a74cdf799fc507d8f07a2c630cd7bb8ae",
-      "created": "2026-09-15T12:56:58.804Z",
-      "lastLogin": null
-    },
-    {
-      "id": "267c86c6fc2a002a",
-      "name": "E2E Test",
-      "email": "e2e1789477054978@test.com",
-      "salt": "52baf1669a8a2932c6d8821548cf4841",
-      "passHash": "2830e84902472c17c694b1cc5414e049b61b376f4804a1c74d361590ab231b64b02e6ff4b72a942706e427d42b6f54eb5c87d41a065272c309010f5c74e090ff",
-      "created": "2026-09-15T12:57:35.067Z",
-      "lastLogin": null,
-      "onboard": {
-        "ageBracket": "25-34",
-        "useCases": [
-          "Work",
-          "Learning"
-        ],
-        "acceptedTerms": true,
-        "at": "2026-09-15T12:57:35.080Z"
-      }
-    },
-    {
-      "id": "e941125d900bc13d",
-      "name": "Onboard UI",
-      "email": "onbui1789477424586@test.com",
-      "salt": "5ddeedaf02fca2457cd2651b50c6d1f7",
-      "passHash": "7858f8dc4970e7970dc4b342ba2de93532c796be6b1393ada9db115b59b01afbff68b1c556a9bdffa050019b141a3808989225ab72f954ca1027c0a4bfeb2453",
-      "created": "2026-09-15T13:03:45.989Z",
-      "lastLogin": null,
-      "onboard": {
-        "ageBracket": "18–24",
-        "useCases": [
-          "Writing",
-          "Research"
-        ],
-        "acceptedTerms": true,
-        "at": "2026-09-15T13:03:53.802Z"
-      }
-    },
-    {
-      "id": "539b032f0d2c524a",
-      "name": "FAQ Test",
-      "email": "faqtest1789488851@test.com",
-      "salt": "01363ce28a0113d0f33177a819580aec",
-      "passHash": "818717b49db58b1d10fd978440bff08e4ef2637afa155146f8ec5ec2368013b016d6e447f4c08c252d94e284cdf9c0584c413d565cd5e934db7f82be3997917d",
-      "created": "2026-09-15T16:14:11.168Z",
-      "lastLogin": null,
-      "onboard": {
-        "ageBracket": "28",
-        "useCases": [
-          "Research"
-        ],
-        "acceptedTerms": true,
-        "at": "2026-09-15T16:14:11.180Z"
-      }
-    }
-  ],
+  "users": [],
   "admin": {
     "username": "genisguixa",
     "salt": "5d8e79dc3a5580ef8e079ab4efba3f19",
     "passHash": "0db631dae29acca7bb49d53f60585681bbfe45a663c7b788d615e3a7a21f12c63d32717a707bef7ffdd57a06c2e91823e7a6529826b719593b2dcb7f0677df11"
   },
   "resets": {},
-  "support": [
-    {
-      "id": "916e6add646e",
-      "name": "Email Only",
-      "email": "emailonly@test.com",
-      "topic": "General",
-      "message": "Support is email only now",
-      "created": "2026-09-15T16:18:50.990Z",
-      "read": false,
-      "resolved": false,
-      "replies": [],
-      "followups": []
-    },
-    {
-      "id": "e0ba396f8ac0",
-      "name": "Onboard UI",
-      "email": "onbui1789477424586@test.com",
-      "topic": "General",
-      "message": "UI thread test message.",
-      "created": "2026-09-15T13:03:56.008Z",
-      "read": true,
-      "resolved": false,
-      "replies": [],
-      "followups": [
-        {
-          "message": "UI follow-up from the thread page.",
-          "at": "2026-09-15T13:03:58.219Z"
-        }
-      ]
-    },
-    {
-      "id": "abd6b44bacce",
-      "name": "E2E Test",
-      "email": "e2e1789477054978@test.com",
-      "topic": "Billing",
-      "message": "Question about API limits.",
-      "created": "2026-09-15T12:57:35.089Z",
-      "read": false,
-      "resolved": false,
-      "replies": [
-        {
-          "message": "Thanks for reaching out — here is what we found.",
-          "at": "2026-09-15T12:57:35.142Z"
-        }
-      ],
-      "followups": [
-        {
-          "message": "Follow-up: what about rate limits on Free?",
-          "at": "2026-09-15T12:57:35.146Z"
-        }
-      ]
-    },
-    {
-      "id": "3f694bae16bf",
-      "name": "Thread Test",
-      "email": "thread1789477018713@test.com",
-      "topic": "Billing",
-      "message": "My first question about the API limits.",
-      "created": "2026-09-15T12:56:58.825Z",
-      "read": false,
-      "resolved": false,
-      "replies": [],
-      "followups": [
-        {
-          "message": "Actually I have a follow-up question about limits.",
-          "at": "2026-09-15T12:56:58.833Z"
-        }
-      ]
-    },
-    {
-      "id": "4fdb6dae3306",
-      "name": "Fresh Tester",
-      "email": "fresh@test.com",
-      "topic": "Bug report",
-      "message": "Brand new message for resolve test.",
-      "created": "2026-09-15T12:51:49.235Z",
-      "read": false,
-      "resolved": true,
-      "replies": []
-    },
-    {
-      "id": "b1223e96bca8",
-      "name": "Bug Tester",
-      "email": "bug@test.com",
-      "topic": "General",
-      "message": "Testing resolve behavior.",
-      "created": "2026-09-15T12:50:53.096Z",
-      "read": false,
-      "resolved": true,
-      "replies": []
-    },
-    {
-      "id": "5304d5d50c2c",
-      "name": "Bug Tester",
-      "email": "bug@test.com",
-      "topic": "General",
-      "message": "Testing resolve behavior.",
-      "created": "2026-09-15T12:50:47.977Z",
-      "read": false,
-      "resolved": false,
-      "replies": []
-    }
-  ],
+  "support": [],
   "status": {
     "services": [
       {
@@ -567,7 +402,8 @@
         ]
       }
     ],
-    "updated": "2026-09-15T11:03:25.805Z"
+    "updated": "2026-09-15T21:23:42.604Z",
+    "incidents": []
   },
   "site": {
     "maintenance": false,
@@ -580,195 +416,186 @@
   },
   "activity": [
     {
-      "at": "2026-09-15T16:18:50.990Z",
-      "text": "New support message from Email Only"
+      "at": "2026-09-16T11:49:00.101Z",
+      "text": "User deleted by admin: SSE Check <sse@test.io>"
     },
     {
-      "at": "2026-09-15T16:14:11.180Z",
-      "text": "Onboarding completed: FAQ Test"
-    },
-    {
-      "at": "2026-09-15T16:14:11.168Z",
-      "text": "New user registered: FAQ Test <faqtest1789488851@test.com>"
-    },
-    {
-      "at": "2026-09-15T13:04:41.222Z",
+      "at": "2026-09-16T11:49:00.062Z",
       "text": "Admin login"
     },
     {
-      "at": "2026-09-15T13:04:24.877Z",
+      "at": "2026-09-16T11:48:59.944Z",
+      "text": "Onboarding completed: SSE Check"
+    },
+    {
+      "at": "2026-09-16T11:48:59.934Z",
+      "text": "New user registered: SSE Check <sse@test.io>"
+    },
+    {
+      "at": "2026-09-16T11:48:30.158Z",
+      "text": "User deleted by admin: Dom Tester <dom_1789559284297@test.io>"
+    },
+    {
+      "at": "2026-09-16T11:48:30.151Z",
+      "text": "User deleted by admin: Dom Tester <dom_1789559282635@test.io>"
+    },
+    {
+      "at": "2026-09-16T11:48:30.109Z",
       "text": "Admin login"
     },
     {
-      "at": "2026-09-15T13:03:58.219Z",
-      "text": "Follow-up on support thread from Onboard UI"
+      "at": "2026-09-16T11:48:04.403Z",
+      "text": "Onboarding completed: Dom Tester"
     },
     {
-      "at": "2026-09-15T13:03:56.008Z",
-      "text": "New support message from Onboard UI"
+      "at": "2026-09-16T11:48:04.392Z",
+      "text": "New user registered: Dom Tester <dom_1789559284297@test.io>"
     },
     {
-      "at": "2026-09-15T13:03:53.802Z",
-      "text": "Onboarding completed: Onboard UI"
+      "at": "2026-09-16T11:48:02.754Z",
+      "text": "Onboarding completed: Dom Tester"
     },
     {
-      "at": "2026-09-15T13:03:45.989Z",
-      "text": "New user registered: Onboard UI <onbui1789477424586@test.com>"
+      "at": "2026-09-16T11:48:02.746Z",
+      "text": "New user registered: Dom Tester <dom_1789559282635@test.io>"
     },
     {
-      "at": "2026-09-15T12:57:35.146Z",
-      "text": "Follow-up on support thread from E2E Test"
-    },
-    {
-      "at": "2026-09-15T12:57:35.142Z",
-      "text": "Support reply sent to E2E Test"
-    },
-    {
-      "at": "2026-09-15T12:57:35.135Z",
+      "at": "2026-09-15T22:04:50.291Z",
       "text": "Admin login"
     },
     {
-      "at": "2026-09-15T12:57:35.089Z",
-      "text": "New support message from E2E Test"
+      "at": "2026-09-15T22:04:50.124Z",
+      "text": "User deleted by admin: Cesc Roca <cesc@test.io>"
     },
     {
-      "at": "2026-09-15T12:57:35.080Z",
-      "text": "Onboarding completed: E2E Test"
+      "at": "2026-09-15T22:04:50.115Z",
+      "text": "User deleted by admin: Berta Roca <berta2@test.io>"
     },
     {
-      "at": "2026-09-15T12:57:35.067Z",
-      "text": "New user registered: E2E Test <e2e1789477054978@test.com>"
+      "at": "2026-09-15T22:04:43.782Z",
+      "text": "Usage reset for user: Berta Roca"
     },
     {
-      "at": "2026-09-15T12:56:58.833Z",
-      "text": "Follow-up on support thread from Thread Test"
+      "at": "2026-09-15T22:04:43.774Z",
+      "text": "User info updated: Berta Roca <berta2@test.io>"
     },
     {
-      "at": "2026-09-15T12:56:58.825Z",
-      "text": "New support message from Thread Test"
+      "at": "2026-09-15T22:04:43.765Z",
+      "text": "User unbanned: Berta Lan <berta@test.io>"
     },
     {
-      "at": "2026-09-15T12:56:58.804Z",
-      "text": "New user registered: Thread Test <thread1789477018713@test.com>"
+      "at": "2026-09-15T22:04:43.698Z",
+      "text": "User banned: Berta Lan <berta@test.io>"
     },
     {
-      "at": "2026-09-15T12:51:51.258Z",
+      "at": "2026-09-15T22:04:43.657Z",
+      "text": "User limit set: Berta Lan → 99 msgs/window"
+    },
+    {
+      "at": "2026-09-15T22:04:43.649Z",
+      "text": "User plan changed: Berta Lan → expert"
+    },
+    {
+      "at": "2026-09-15T22:04:43.578Z",
+      "text": "New user registered: Cesc Roca <cesc@test.io>"
+    },
+    {
+      "at": "2026-09-15T22:04:43.525Z",
+      "text": "New user registered: Berta Lan <berta@test.io>"
+    },
+    {
+      "at": "2026-09-15T22:04:43.461Z",
       "text": "Admin login"
     },
     {
-      "at": "2026-09-15T12:51:49.235Z",
-      "text": "New support message from Fresh Tester"
-    },
-    {
-      "at": "2026-09-15T12:51:27.226Z",
+      "at": "2026-09-15T22:04:15.947Z",
       "text": "Admin login"
     },
     {
-      "at": "2026-09-15T12:50:53.156Z",
+      "at": "2026-09-15T22:04:10.626Z",
       "text": "Admin login"
     },
     {
-      "at": "2026-09-15T12:50:53.096Z",
-      "text": "New support message from Bug Tester"
-    },
-    {
-      "at": "2026-09-15T12:50:47.977Z",
-      "text": "New support message from Bug Tester"
-    },
-    {
-      "at": "2026-09-15T12:15:10.626Z",
+      "at": "2026-09-15T21:58:42.442Z",
       "text": "Admin login"
     },
     {
-      "at": "2026-09-15T12:15:09.499Z",
-      "text": "Announcement removed"
-    },
-    {
-      "at": "2026-09-15T12:15:06.211Z",
-      "text": "Announcement published"
-    },
-    {
-      "at": "2026-09-15T12:15:06.207Z",
+      "at": "2026-09-15T21:58:18.959Z",
       "text": "Admin login"
     },
     {
-      "at": "2026-09-15T12:14:20.095Z",
-      "text": "Announcement published"
-    },
-    {
-      "at": "2026-09-15T12:14:20.091Z",
+      "at": "2026-09-15T21:58:10.757Z",
       "text": "Admin login"
     },
     {
-      "at": "2026-09-15T11:03:25.805Z",
-      "text": "Admin panel initialized"
+      "at": "2026-09-15T21:56:27.650Z",
+      "text": "Admin login"
+    },
+    {
+      "at": "2026-09-15T21:46:05.149Z",
+      "text": "AI config saved — model llama-3.3-70b-versatile · no key"
+    },
+    {
+      "at": "2026-09-15T21:45:38.706Z",
+      "text": "Account deleted: Ana Prova <ana@test.io>"
+    },
+    {
+      "at": "2026-09-15T21:45:38.641Z",
+      "text": "Password changed: Ana Prova"
+    },
+    {
+      "at": "2026-09-15T21:45:36.742Z",
+      "text": "AI config saved — model llama-3.3-70b-versatile · key set"
+    },
+    {
+      "at": "2026-09-15T21:45:36.712Z",
+      "text": "Admin login"
+    },
+    {
+      "at": "2026-09-15T21:45:19.148Z",
+      "text": "Onboarding completed: Ana Prova"
+    },
+    {
+      "at": "2026-09-15T21:45:19.129Z",
+      "text": "New user registered: Ana Prova <ana@test.io>"
+    },
+    {
+      "at": "2026-09-15T21:23:42.604Z",
+      "text": "Status history updated: Web experience"
+    },
+    {
+      "at": "2026-09-15T21:23:33.714Z",
+      "text": "Incident removed: Prueba de incidencia"
+    },
+    {
+      "at": "2026-09-15T21:23:33.672Z",
+      "text": "Incident resolved: Prueba de incidencia"
+    },
+    {
+      "at": "2026-09-15T21:23:33.663Z",
+      "text": "Incident updated: Prueba de incidencia"
+    },
+    {
+      "at": "2026-09-15T21:23:33.622Z",
+      "text": "Incident created: Prueba de incidencia"
+    },
+    {
+      "at": "2026-09-15T21:23:33.611Z",
+      "text": "Admin login"
+    },
+    {
+      "at": "2026-09-15T21:18:21.689Z",
+      "text": "Removed test/fabricated data (fake emails and accounts)"
     }
   ],
-  "sessions": {
-    "290db38ad2cb9b0f5e9f001189443d6c3872a663676c540c": {
-      "role": "admin",
-      "id": "admin",
-      "exp": 1790079260091
-    },
-    "7f48777ec4fab21c93bea6a3141744930544838a64027c82": {
-      "role": "admin",
-      "id": "admin",
-      "exp": 1790079306207
-    },
-    "4843041ed3e7ac381173e31bdc68dc3404cf444cd96c9145": {
-      "role": "admin",
-      "id": "admin",
-      "exp": 1790079310625
-    },
-    "5985c31f060eacb579a40406a529a769aa8ca98f4f7cff31": {
-      "role": "admin",
-      "id": "admin",
-      "exp": 1790081453156
-    },
-    "84405947bec9cda63a0b4e48c992b54ca7f71c5851b13489": {
-      "role": "admin",
-      "id": "admin",
-      "exp": 1790081487226
-    },
-    "9f20fca9c0dc27426fbe5c2c63e092605480035b3d3755ed": {
-      "role": "admin",
-      "id": "admin",
-      "exp": 1790081511258
-    },
-    "63cf9acbb785d10a059d1f4192c1ded7194878305775e015": {
-      "role": "user",
-      "id": "685e0f9fd56349ec",
-      "exp": 1790081818805
-    },
-    "78c2b77381d3e111b4f22338c1258067baba65773c8883f2": {
-      "role": "user",
-      "id": "267c86c6fc2a002a",
-      "exp": 1790081855068
-    },
-    "1155f06c87470d04bef1f45c6960c8bf79e9f8b6b209b7c5": {
-      "role": "admin",
-      "id": "admin",
-      "exp": 1790081855135
-    },
-    "3717f402e9841474af677309aebd3a143cb2af70d760fe69": {
-      "role": "user",
-      "id": "e941125d900bc13d",
-      "exp": 1790082225990
-    },
-    "4f6e3473f8ce0e2ee97a14a15e1530dbe02b5c51cda7f9ef": {
-      "role": "admin",
-      "id": "admin",
-      "exp": 1790082264877
-    },
-    "17639de8dfc6bc0490e88c08d6006d7cb0cec50dfc9c831e": {
-      "role": "admin",
-      "id": "admin",
-      "exp": 1790082281222
-    },
-    "c0fd147fb7b05b0eb04cca48f5f3675c4468cd3b510dd07a": {
-      "role": "user",
-      "id": "539b032f0d2c524a",
-      "exp": 1790093651170
-    }
-  }
+  "sessions": {},
+  "ai": {
+    "apiKey": "",
+    "model": "llama-3.3-70b-versatile",
+    "limitMessages": 15,
+    "limitWindowHours": 6,
+    "systemPrompt": ""
+  },
+  "chats": {},
+  "usage": {}
 }
