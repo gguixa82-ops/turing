@@ -39,16 +39,9 @@ input, select, textarea { font-family: inherit; }
 
 /* film grain */
 .grain {
-  position: fixed; inset: -50%; z-index: 1; pointer-events: none; opacity: 0.05;
+  position: fixed; inset: 0; z-index: 1; pointer-events: none; opacity: 0.05;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E");
-  animation: grain 14s steps(4) infinite;
 }
-@keyframes grain {
-  0% { transform: translate(0, 0); } 20% { transform: translate(-2%, 3%); }
-  40% { transform: translate(3%, -2%); } 60% { transform: translate(-3%, -3%); }
-  80% { transform: translate(2%, 2%); } 100% { transform: translate(0, 0); }
-}
-
 /* ============ announcement bar ============ */
 .announce {
   position: relative; z-index: 50;
@@ -78,8 +71,7 @@ input, select, textarea { font-family: inherit; }
 }
 .site-header.sticky {
   position: sticky; top: 0;
-  background: rgba(10, 10, 10, 0.72);
-  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  background: rgba(10, 10, 10, 0.92);
   border-bottom: 1px solid var(--line);
 }
 .wordmark { font-size: 17px; font-weight: 700; letter-spacing: -0.03em; color: var(--white); }
@@ -129,7 +121,6 @@ input, select, textarea { font-family: inherit; }
 
 .mobile-menu {
   position: fixed; inset: 0; z-index: 60; background: rgba(10,10,10,0.97);
-  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
   display: flex; flex-direction: column; justify-content: center;
   padding: 0 32px; opacity: 0; pointer-events: none; transition: opacity .35s var(--ease);
 }
@@ -364,13 +355,11 @@ input, select, textarea { font-family: inherit; }
 .pricing { position: relative; }
 .pricing-bg { position: absolute; inset: 0; overflow: hidden; pointer-events: none; }
 .pricing-bg .orb {
-  position: absolute; border-radius: 50%; filter: blur(90px);
-  background: radial-gradient(circle, rgba(255,255,255,0.05), transparent 70%);
+  position: absolute; border-radius: 50%;
+  background: radial-gradient(circle, rgba(255,255,255,0.06), transparent 68%);
 }
-.pricing-bg .orb1 { width: 520px; height: 520px; top: -180px; left: -140px; animation: drift1 26s ease-in-out infinite alternate; }
-.pricing-bg .orb2 { width: 640px; height: 640px; top: 10%; right: -220px; animation: drift2 32s ease-in-out infinite alternate; }
-@keyframes drift1 { to { transform: translate(120px, 90px); } }
-@keyframes drift2 { to { transform: translate(-140px, 120px); } }
+.pricing-bg .orb1 { width: 520px; height: 520px; top: -180px; left: -140px; }
+.pricing-bg .orb2 { width: 640px; height: 640px; top: 10%; right: -220px; }
 .pricing-grid {
   position: relative;
   display: grid; grid-template-columns: repeat(5, 1fr); gap: 14px;
@@ -800,7 +789,7 @@ input, select, textarea { font-family: inherit; }
   position: absolute; top: calc(100% + 8px); right: 0; z-index: 300;
   min-width: 210px; max-height: min(420px, calc(100dvh - 120px)); overflow-y: auto;
   background: rgba(18,18,20,0.96); border: 1px solid var(--line-2); border-radius: 12px;
-  padding: 6px; box-shadow: 0 18px 50px rgba(0,0,0,0.55); backdrop-filter: blur(14px);
+  padding: 6px; box-shadow: 0 18px 50px rgba(0,0,0,0.55);
   animation: langIn .18s var(--ease);
 }
 @keyframes langIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }

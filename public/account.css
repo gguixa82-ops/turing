@@ -14,7 +14,7 @@ a { color: inherit; text-decoration: none; }
 button { font-family: inherit; cursor: pointer; }
 ::selection { background: rgba(245,245,245,0.22); }
 
-.grain { position: fixed; inset: -50%; z-index: 200; pointer-events: none; opacity: .05;
+.grain { position: fixed; inset: 0; z-index: 200; pointer-events: none; opacity: .05;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='300' height='300'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='300' height='300' filter='url(%23n)' opacity='0.6'/%3E%3C/svg%3E");
 }
 
@@ -25,7 +25,7 @@ button { font-family: inherit; cursor: pointer; }
 .acc-top {
   position: sticky; top: 0; z-index: 50;
   display: flex; align-items: center; height: 58px; padding: 0 22px;
-  background: rgba(10,10,10,0.82); backdrop-filter: blur(14px);
+  background: rgba(10,10,10,0.92);
   border-bottom: 1px solid var(--line);
 }
 .wordmark { font-size: 16.5px; font-weight: 800; letter-spacing: -0.03em; color: var(--white); }
@@ -61,8 +61,7 @@ button { font-family: inherit; cursor: pointer; }
   display: grid; place-items: center; font-size: 30px; font-weight: 800; color: var(--white);
   box-shadow: 0 14px 40px rgba(0,0,0,0.45);
 }
-.hero-ava::after { content: ''; position: absolute; inset: -5px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.12); animation: avaPulse 3s ease-in-out infinite; }
-@keyframes avaPulse { 0%,100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.06); opacity: .5; } }
+.hero-ava::after { content: ''; position: absolute; inset: -5px; border-radius: 50%; border: 1px solid rgba(255,255,255,0.12); }
 .hero-id { flex: 1; min-width: 220px; }
 .hero-id h1 { font-size: 27px; font-weight: 800; letter-spacing: -0.025em; color: var(--white); }
 .hero-mail { font-size: 14px; color: var(--text-3); margin-top: 4px; }
@@ -85,8 +84,7 @@ button { font-family: inherit; cursor: pointer; }
 .c-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
 .card h2 { font-size: 11.5px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--text-3); }
 .c-live { display: inline-flex; }
-.c-live i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); animation: liveBlink 2s ease-in-out infinite; }
-@keyframes liveBlink { 0%,100% { opacity: 1; box-shadow: 0 0 8px rgba(62,207,142,0.8); } 50% { opacity: .4; box-shadow: none; } }
+.c-live i { width: 7px; height: 7px; border-radius: 50%; background: var(--green); box-shadow: 0 0 8px rgba(62,207,142,0.8); }
 .card-sub { font-size: 13px; color: var(--text-4); margin: -8px 0 18px; line-height: 1.5; }
 .card-body { font-size: 14px; color: var(--text-2); line-height: 1.65; }
 .card-note { font-size: 12.5px; color: var(--text-4); margin-top: 12px; }
@@ -101,8 +99,6 @@ button { font-family: inherit; cursor: pointer; }
 .u-fill { position: relative; height: 100%; border-radius: 99px; background: var(--white); transition: width 1s var(--ease); overflow: hidden; min-width: 0; }
 .u-fill.warn { background: var(--amber); }
 .u-fill.full { background: var(--red); }
-.u-shine { position: absolute; inset: 0; background: linear-gradient(105deg, transparent 30%, rgba(255,255,255,0.55) 50%, transparent 70%); transform: translateX(-100%); animation: shine 2.6s var(--ease) infinite; }
-@keyframes shine { 60%,100% { transform: translateX(100%); } }
 .u-meta { display: flex; justify-content: space-between; gap: 10px; margin-top: 13px; font-size: 12.5px; color: var(--text-3); flex-wrap: wrap; }
 .u-resets { font-weight: 600; color: var(--text-2); }
 .u-win { color: var(--text-4); }

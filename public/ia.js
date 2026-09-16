@@ -189,7 +189,7 @@ function welcomeHtml() {
   const keys = ['iaSug1', 'iaSug2', 'iaSug3', 'iaSug4'];
   return `
   <div class="welcome">
-    <div class="welcome-mark"><span class="orbit" aria-hidden="true"><i></i></span><span class="core"></span></div>
+    <div class="welcome-mark"><span class="core"></span></div>
     <h1>${esc(T('iaHello', { name: first }))}</h1>
     <div class="w-sub">${esc(T('iaSub'))}</div>
     <div class="suggestions">
